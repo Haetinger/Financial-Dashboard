@@ -126,8 +126,57 @@ async function alleIndizes() {
   return daten;
 }
 
+// ---------- Symbolsuche (Firmenname -> Ticker) ----------
+const sucheCache = new Map(); // q -> { zeit, daten }
+const SUCHE_CACHE_SEK = 3600;
+
+async function symbolSuche(q) {
+  const key = q.toLowerCase();
+  const c = sucheCache.get(key);
+  if (c && Date.now() - c.zeit < SUCHE_CACHE_SEK * 1000) return c.daten;
+  const url = "https://query1.finance.yahoo.com/v1/finance/search?q=" +
+              encodeURIComponent(q) + "&quotesCount=8&newsCount=0&listsCount=0";
+  const r = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Kursstand-Dashboard" },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!r.ok) throw new Error("Suche: HTTP " + r.status);
+  const j = await r.json();
+  const daten = (j.quotes || [])
+    .filter(t => t.quoteType === "EQUITY" || t.quoteType === "ETF")
+    .map(t => ({
+      symbol: t.symbol,
+      name: t.shortname || t.longname || t.symbol,
+      boerse: t.exchDisp || "",
+      typ: t.typeDisp || ""
+    }));
+  sucheCache.set(key, { zeit: Date.now(), daten });
+  return daten;
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://localhost");
+
+  if (u.pathname === "/api/suche") {
+    const q = (u.searchParams.get("q") || "").trim();
+    if (q.length < 2) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("[]");
+      return;
+    }
+    try {
+      const daten = await symbolSuche(q);
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=3600"
+      });
+      res.end(JSON.stringify(daten));
+    } catch (e) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ fehler: String(e.message || e) }));
+    }
+    return;
+  }
 
   if (u.pathname === "/api/indices") {
     try {
