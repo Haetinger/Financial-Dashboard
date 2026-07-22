@@ -506,6 +506,123 @@ async function moversAbfragen() {
   return moverLaeuft;
 }
 
+// ---------- Kurzbeschreibungen (kuratiert, Fallback: Yahoo-Suche) ----------
+const BESCHREIBUNGEN = {
+  // Indizes
+  "^GSPC": "Die 500 größten US-Unternehmen — der wichtigste Aktienindex der Welt.",
+  "^IXIC": "Alle Werte der US-Technologiebörse NASDAQ, stark techlastig.",
+  "^GSPTSE": "Leitindex der Börse Toronto (Kanada).",
+  "^MXX": "Leitindex der mexikanischen Börse.",
+  "^BVSP": "Leitindex der Börse São Paulo (Brasilien).",
+  "^FTSE": "Die 100 größten Unternehmen der Londoner Börse.",
+  "^AEX": "Die 25 größten Unternehmen der Amsterdamer Börse.",
+  "^GDAXI": "Die 40 größten börsennotierten Unternehmen Deutschlands.",
+  "^FCHI": "Die 40 größten französischen Unternehmen (Paris).",
+  "^SSMI": "Die 20 größten Schweizer Unternehmen (Zürich).",
+  "FTSEMIB.MI": "Die 40 größten italienischen Unternehmen (Mailand).",
+  "^IBEX": "Die 35 größten spanischen Unternehmen (Madrid).",
+  "^N225": "225 führende japanische Unternehmen — Japans bekanntester Index.",
+  "^KS11": "Gesamtindex der südkoreanischen Börse (Seoul).",
+  "000001.SS": "Gesamtindex der Börse Shanghai.",
+  "^TWII": "Gesamtindex der Börse Taiwan — Heimat des Chipriesen TSMC.",
+  "^HSI": "Leitindex der Börse Hongkong.",
+  "^BSESN": "Die 30 größten Unternehmen der Börse Mumbai (Indien).",
+  "^STI": "Die 30 größten Unternehmen der Börse Singapur.",
+  "^AXJO": "Die 200 größten australischen Unternehmen.",
+  // Marktlage
+  "^STOXX": "Die 600 größten Unternehmen Europas — der breite Europa-Index.",
+  "ACWI": "ETF auf den gesamten Weltaktienmarkt (Industrie- und Schwellenländer).",
+  "EEM": "ETF auf Aktien aus Schwellenländern.",
+  "000300.SS": "Die 300 größten Aktien Festlandchinas.",
+  "^VIX": "Erwartete Schwankungsbreite des S&P 500 — das „Angstbarometer\u201c der Wall Street.",
+  "^TNX": "Rendite zehnjähriger US-Staatsanleihen — der wichtigste Zins der Welt.",
+  "DX-Y.NYB": "Stärke des US-Dollars gegenüber sechs großen Weltwährungen.",
+  // Rohstoffe & Devisen
+  "GC=F": "Gold-Terminkontrakt, Preis je Feinunze.",
+  "BZ=F": "Nordsee-Rohöl Brent, Preis je Barrel — Referenz für Europa.",
+  "CL=F": "US-Rohöl WTI, Preis je Barrel.",
+  "HG=F": "Kupfer-Terminkontrakt — gilt als Konjunktur-Frühindikator.",
+  "BTC-EUR": "Bitcoin, die größte Kryptowährung, in Euro.",
+  "EURUSD=X": "Wechselkurs Euro zu US-Dollar.",
+  // Bekannte Aktien
+  "AAPL": "Apple — iPhone, Mac und Dienste; wertvollster Technologiekonzern.",
+  "MSFT": "Microsoft — Windows, Office und die Cloud-Plattform Azure.",
+  "NVDA": "Nvidia — führende Chips für KI und Grafik.",
+  "GOOGL": "Alphabet — Google-Suche, YouTube, Android und Cloud.",
+  "AMZN": "Amazon — Onlinehandel und der Cloud-Marktführer AWS.",
+  "META": "Meta — Facebook, Instagram und WhatsApp.",
+  "TSLA": "Tesla — Elektroautos, Batterien und Energiespeicher.",
+  "BRK-B": "Berkshire Hathaway — Beteiligungsholding von Warren Buffett.",
+  "AVGO": "Broadcom — Halbleiter und Infrastruktur-Software.",
+  "JPM": "JPMorgan Chase — größte Bank der USA.",
+  "SAP.DE": "SAP — Europas größter Softwarekonzern (Unternehmenssoftware).",
+  "SIE.DE": "Siemens — Industrietechnik, Automatisierung, Bahn und Medizintechnik.",
+  "ALV.DE": "Allianz — einer der größten Versicherer der Welt.",
+  "VOW3.DE": "Volkswagen — größter europäischer Autohersteller.",
+  "BMW.DE": "BMW — Premium-Autohersteller aus München.",
+  "MBG.DE": "Mercedes-Benz Group — Premium-Autohersteller aus Stuttgart.",
+  "BAS.DE": "BASF — größter Chemiekonzern der Welt.",
+  "BAYN.DE": "Bayer — Pharma und Agrarchemie.",
+  "DTE.DE": "Deutsche Telekom — Telekommunikation, Mehrheitseigner von T-Mobile US.",
+  "ADS.DE": "Adidas — Sportartikelhersteller aus Herzogenaurach.",
+  "RHM.DE": "Rheinmetall — Rüstung und Verteidigungstechnik.",
+  "IFX.DE": "Infineon — Halbleiter für Auto und Industrie.",
+  "DHL.DE": "DHL Group — weltweite Logistik und Paketdienste.",
+  "RWE.DE": "RWE — Energiekonzern mit Fokus auf erneuerbare Erzeugung."
+};
+const infoCache = new Map(); // symbol -> { titel, text }
+
+async function infoAbfragen(symbol) {
+  if (infoCache.has(symbol)) return infoCache.get(symbol);
+  let info;
+  if (BESCHREIBUNGEN[symbol]) {
+    info = { titel: symbol, text: BESCHREIBUNGEN[symbol] };
+  } else {
+    try {
+      const treffer = await symbolSuche(symbol);
+      const t = treffer.find(x => x.symbol === symbol) || treffer[0];
+      if (t) {
+        info = { titel: t.name, text: [t.typ, t.boerse].filter(Boolean).join(" · ") };
+      }
+    } catch (e) { /* still */ }
+    if (!info) info = { titel: symbol, text: "" };
+  }
+  infoCache.set(symbol, info);
+  return info;
+}
+
+// ---------- Wertspezifische News (Yahoo Symbol-Feed) ----------
+const symbolNewsCache = new Map(); // symbol -> { zeit, daten }
+
+async function symbolNewsAbfragen(symbol) {
+  const c = symbolNewsCache.get(symbol);
+  if (c && Date.now() - c.zeit < 900000) return c.daten;
+  const url = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=" +
+              encodeURIComponent(symbol) + "&region=US&lang=en-US";
+  const r = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Kursstand-Dashboard RSS-Reader" },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const xml = await r.text();
+  const daten = [];
+  for (const block of xml.match(/<item[\s>][\s\S]*?<\/item>/g) || []) {
+    const titel = block.match(/<title>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/title>/);
+    const link = block.match(/<link>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/link>/);
+    const datum = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    if (!titel) continue;
+    daten.push({
+      titel: xmlEntitäten(titel[1]),
+      link: link ? xmlEntitäten(link[1]) : "",
+      zeit: datum ? Date.parse(datum[1]) || 0 : 0
+    });
+  }
+  daten.sort((a, b) => b.zeit - a.zeit);
+  const top = daten.slice(0, 6);
+  symbolNewsCache.set(symbol, { zeit: Date.now(), daten: top });
+  return top;
+}
+
 const server = http.createServer(async (req, res) => {
   if (!authOk(req)) {
     res.writeHead(401, {
@@ -685,6 +802,29 @@ const server = http.createServer(async (req, res) => {
     try {
       const daten = await moversAbfragen();
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" });
+      res.end(JSON.stringify(daten));
+    } catch (e) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ fehler: String(e.message || e) }));
+    }
+    return;
+  }
+
+  if (u.pathname === "/api/info") {
+    const symbol = (u.searchParams.get("symbol") || "").trim().toUpperCase();
+    if (!symbol) { res.writeHead(400); res.end(); return; }
+    const daten = await infoAbfragen(symbol);
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=86400" });
+    res.end(JSON.stringify(daten));
+    return;
+  }
+
+  if (u.pathname === "/api/symbolnews") {
+    const symbol = (u.searchParams.get("symbol") || "").trim().toUpperCase();
+    if (!symbol) { res.writeHead(400); res.end(); return; }
+    try {
+      const daten = await symbolNewsAbfragen(symbol);
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=600" });
       res.end(JSON.stringify(daten));
     } catch (e) {
       res.writeHead(502, { "Content-Type": "application/json" });

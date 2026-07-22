@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- kursstand-build-10 -->
+<!-- kursstand-build-11 -->
 <title>Kursstand · Finanz-Dashboard</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0C111B">
@@ -214,6 +214,10 @@
   .moverEintrag{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:6px;background:var(--flaeche-hoch);border:1px solid var(--linie);margin-bottom:6px}
   .moverEintrag:hover{border-color:var(--bernstein)}
   .moverEintrag .msym{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .vlInfo{font-size:13px;color:var(--text-dim);margin-bottom:10px;line-height:1.45}
+  .vlInfo b{color:var(--text)}
+  .vlNews{margin-top:12px;border-top:1px solid var(--linie);padding-top:4px}
 
   /* ---------- Layout ---------- */
   .rahmen{max-width:1240px;margin:0 auto;padding:24px;display:grid;gap:24px;grid-template-columns:1fr 1fr}
@@ -433,8 +437,13 @@
         <button class="btn klein" data-range="1y">1J</button>
         <button class="btn klein" data-range="5y">5J</button>
       </div>
+      <div class="vlInfo" id="vlInfo" hidden></div>
       <div id="vlChart"></div>
       <div class="leer" id="vlHinweis" hidden></div>
+      <div class="vlNews" id="vlNews" hidden>
+        <div class="maerkteTitel" id="vlNewsTitel"></div>
+        <div id="vlNewsListe"></div>
+      </div>
     </div>
   </section>
 
@@ -476,7 +485,7 @@
   </section>
 
   <div class="fussnote">
-    Alle Kurse: Yahoo Finance via eigenes Backend · Umrechnung in EUR (bei Fremdwährungen zum aktuellen Wechselkurs) · Kurse ggf. verzögert · keine Anlageberatung · kursstand-build-10
+    Alle Kurse: Yahoo Finance via eigenes Backend · Umrechnung in EUR (bei Fremdwährungen zum aktuellen Wechselkurs) · Kurse ggf. verzögert · keine Anlageberatung · kursstand-build-11
   </div>
 </div>
 
@@ -1018,11 +1027,44 @@
                    : await historieHolen(roh, vlRange, istIndex);
       const einheit = istIndex ? (roh === 'EURUSD=X' ? '$' : 'Pkt.') : '€';
       ziel.innerHTML = liniendiagramm(punkte, einheit);
+      wertDetails(vlSymbol === '__DEPOT__' ? null : roh);
     }catch(e){
       ziel.innerHTML = '';
       hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
       hinweis.hidden = false;
     }
+  }
+
+  async function wertDetails(symbol){
+    const info = $('vlInfo'), news = $('vlNews');
+    if(!symbol){ info.hidden = true; news.hidden = true; return; }
+    // Kurzbeschreibung
+    try{
+      const r = await fetch('api/info?symbol=' + encodeURIComponent(symbol));
+      if(r.ok){
+        const d = await r.json();
+        if(d.titel || d.text){
+          info.innerHTML = '<b>' + esc(d.titel || symbol) + '</b>' + (d.text ? ' — ' + esc(d.text) : '');
+          info.hidden = false;
+        } else info.hidden = true;
+      }
+    }catch(e){ info.hidden = true; }
+    // Wertspezifische News
+    try{
+      const r = await fetch('api/symbolnews?symbol=' + encodeURIComponent(symbol));
+      if(!r.ok) throw new Error();
+      const d = await r.json();
+      if(!Array.isArray(d) || !d.length) throw new Error();
+      $('vlNewsTitel').textContent = 'NEWS ZU ' + symbol;
+      $('vlNewsListe').innerHTML = d.slice(0,5).map(n => {
+        const zeit = n.zeit ? new Date(n.zeit).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}) + ' ' +
+                              new Date(n.zeit).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+        return '<a class="newsEintrag" href="' + esc(n.link) + '" target="_blank" rel="noopener">' +
+               '<span class="newsZeit" style="min-width:78px">' + zeit + '</span>' +
+               '<span class="newsTitel">' + esc(n.titel) + '</span></a>';
+      }).join('');
+      news.hidden = false;
+    }catch(e){ news.hidden = true; }
   }
 
   $('vlSymbol').addEventListener('change', ()=>{ vlSymbol = $('vlSymbol').value; verlaufRendern(); });
