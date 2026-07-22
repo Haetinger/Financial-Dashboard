@@ -184,8 +184,8 @@ const histCache = new Map(); // "symbol|range" -> { zeit, daten }
 const HIST_CACHE_SEK = 3600;
 const HIST_RANGES = { "1mo": "1d", "6mo": "1d", "1y": "1d", "5y": "1wk" };
 
-async function historieAbfragen(symbol, range) {
-  const key = symbol + "|" + range;
+async function historieAbfragen(symbol, range, roh) {
+  const key = symbol + "|" + range + (roh ? "|roh" : "");
   const c = histCache.get(key);
   if (c && Date.now() - c.zeit < HIST_CACHE_SEK * 1000) return c.daten;
   const interval = HIST_RANGES[range] || "1d";
@@ -202,7 +202,7 @@ async function historieAbfragen(symbol, range) {
   let waehrung = res.meta.currency || "USD";
   let pence = false;
   if (waehrung === "GBp" || waehrung === "GBX") { waehrung = "GBP"; pence = true; }
-  const rate = await fxRate(waehrung);
+  const rate = roh ? 1 : await fxRate(waehrung);
   const close = res.indicators?.quote?.[0]?.close || [];
   const punkte = [];
   for (let i = 0; i < res.timestamp.length; i++) {
@@ -390,7 +390,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const daten = await historieAbfragen(symbol, range);
+      const daten = await historieAbfragen(symbol, range, u.searchParams.get("roh") === "1");
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=1800" });
       res.end(JSON.stringify(daten));
     } catch (e) {

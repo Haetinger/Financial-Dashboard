@@ -159,6 +159,12 @@
   .alEintrag .entf:hover{color:var(--minus)}
   .maerkteTitel{font-size:11px;color:var(--text-dim);font-family:var(--mono);letter-spacing:.05em;margin-top:14px}
 
+  .klickbar{cursor:pointer}
+  tr.klickbar:hover td{background:rgba(255,255,255,.02)}
+  .indexeintrag.klickbar:hover{border-color:var(--bernstein)}
+  @keyframes blitzen{0%{border-color:var(--bernstein)}100%{border-color:var(--linie)}}
+  .blitz{animation:blitzen 1.2s ease-out}
+
   /* ---------- Layout ---------- */
   .rahmen{max-width:1240px;margin:0 auto;padding:24px;display:grid;gap:24px;grid-template-columns:1fr 1fr}
   @media(max-width:920px){.rahmen{grid-template-columns:1fr}}
@@ -474,7 +480,7 @@
     if(!watchlist.length){ el.innerHTML = '<div class="leer">Noch keine Symbole — oben suchen und hinzufügen.</div>'; return; }
     el.innerHTML = watchlist.map(sym => {
       const q = kurse[sym];
-      return '<div class="wl-item">' +
+      return '<div class="wl-item klickbar" data-sym="' + esc(sym) + '">' +
         '<span class="sym">' + esc(sym) + fremdwaehrung(q) + '</span>' +
         '<span class="kurs">' + (q?eur(q.kursEur):"—") + '</span>' +
         '<button class="entf" data-wl="' + esc(sym) + '" aria-label="' + esc(sym) + ' entfernen">×</button>' +
@@ -494,7 +500,7 @@
         const wert = q ? q.kursEur * p.stueck : null;
         const gv   = q ? (q.kursEur - p.kauf) * p.stueck : null;
         const cls  = gv==null ? "" : (gv>=0 ? "pos" : "neg");
-        return "<tr><td>" + esc(p.sym) + "</td><td>" + p.stueck + "</td><td>" + eur(p.kauf) + "</td>" +
+        return '<tr class="klickbar" data-sym=' + JSON.stringify(esc(p.sym)) + '><td>' + esc(p.sym) + "</td><td>" + p.stueck + "</td><td>" + eur(p.kauf) + "</td>" +
                "<td>" + (q?eur(q.kursEur):"—") + "</td><td>" + eur(wert) + "</td>" +
                '<td class="diff ' + cls + '">' + (gv==null?"—":pfx(gv)+" €") + "</td>" +
                '<td><button class="entf" data-pf="' + i + '" aria-label="Position entfernen">×</button></td></tr>';
@@ -569,7 +575,7 @@
       }, 250);
     });
 
-    boxEl.addEventListener("mousedown", e=>{
+    boxEl.addEventListener("pointerdown", e=>{
       const b = e.target.closest(".vorschlag");
       if(!b) return;
       e.preventDefault();
@@ -577,7 +583,7 @@
       schliessen();
     });
 
-    inputEl.addEventListener("blur", ()=> setTimeout(schliessen, 150));
+    inputEl.addEventListener("blur", ()=> setTimeout(schliessen, 250));
     inputEl.addEventListener("keydown", e=>{ if(e.key === "Escape") schliessen(); });
     document.addEventListener("click", e=>{
       if(offen && !boxEl.contains(e.target) && e.target !== inputEl) schliessen();
@@ -586,7 +592,13 @@
 
   function watchlistHinzufuegen(sym){
     sym = sym.trim().toUpperCase();
-    if(!sym || watchlist.includes(sym)) return;
+    if(!sym) return;
+    if(watchlist.includes(sym)){
+      const el = $("wlListe").querySelector('.wl-item[data-sym="' + CSS.escape(sym) + '"]');
+      if(el){ el.classList.remove("blitz"); void el.offsetWidth; el.classList.add("blitz"); }
+      $("wlSymbol").value = "";
+      return;
+    }
     watchlist.push(sym); store.set("ks_watchlist", watchlist);
     $("wlSymbol").value = "";
     allesLaden();
@@ -672,11 +684,13 @@
   // Ziehen (Pan) + Pinch-Zoom über Pointer-Events
   const zeiger = new Map();
   let pinchAbstand = null;
+  let panWeg = 0;
 
   svg.addEventListener("pointerdown", e=>{
     if(e.pointerType === "mouse" && e.button !== 0) return; // nur linke Maustaste
     e.preventDefault();
     svg.setPointerCapture(e.pointerId);
+    panWeg = 0;
     zeiger.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if(zeiger.size === 2){
       const [a,b] = [...zeiger.values()];
@@ -689,6 +703,7 @@
     const alt = zeiger.get(e.pointerId);
     zeiger.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if(zeiger.size === 1){
+      panWeg += Math.abs(e.clientX - alt.x) + Math.abs(e.clientY - alt.y);
       const skala = vb.w / svg.clientWidth;
       vb.x -= (e.clientX - alt.x) * skala;
       vb.y -= (e.clientY - alt.y) * skala;
@@ -721,7 +736,7 @@
       const m = MARKER[d.symbol];
       if(!m) return '';
       const L = LABELPOS[d.symbol] || STDPOS;
-      const attr = 'data-x="' + m.x + '" data-y="' + m.y + '"';
+      const attr = 'data-x="' + m.x + '" data-y="' + m.y + '" data-idx="' + d.symbol + '" data-name="' + m.name + '"';
       const txt = (zeile1, zeile2, farbe) =>
         '<text x="' + L.dx + '" y="' + (L.dy - 2) + '" text-anchor="' + L.anchor + '">' + zeile1 + '</text>' +
         '<text class="wertzeile" x="' + L.dx + '" y="' + (L.dy + 10) + '" text-anchor="' + L.anchor + '">' + zeile2 + '</text>';
@@ -756,10 +771,10 @@
 
     $('indexliste').innerHTML = daten.map(d => {
       const m = MARKER[d.symbol] || {name:d.symbol, ort:''};
-      if(d.fehler) return '<div class="indexeintrag"><span class="iname">' + m.name + ' · ' + m.ort + '</span><span class="ikurs">—</span></div>';
+      if(d.fehler) return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + m.name + ' · ' + m.ort + '</span><span class="ikurs">—</span></div>';
       const cls = d.diff >= 0 ? 'pos' : 'neg';
       const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + ' %';
-      return '<div class="indexeintrag"><span class="iname">' + m.name + ' · ' + m.ort + '</span>' +
+      return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + m.name + ' · ' + m.ort + '</span>' +
              '<span class="ikurs">' + punkte(d.kurs, d.waehrung) + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
     }).join('');
   }
@@ -800,12 +815,12 @@
       const daten = await r.json();
       if(!Array.isArray(daten)) return;
       $('maerkteListe').innerHTML = daten.map(d => {
-        if(d.fehler) return '<div class="indexeintrag"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
+        if(d.fehler) return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
         const cls = d.diffPzt >= 0 ? 'pos' : 'neg';
         const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + ' %';
         const dez = d.name === 'EUR/USD' ? 4 : (d.kursEur >= 1000 ? 0 : 2);
         const kurs = d.kursEur.toLocaleString('de-DE',{minimumFractionDigits:dez,maximumFractionDigits:dez});
-        return '<div class="indexeintrag"><span class="iname">' + esc(d.name) + '</span>' +
+        return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + esc(d.name) + '</span>' +
                '<span class="ikurs">' + kurs + ' ' + esc(d.einheit) + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
       }).join('');
     }catch(e){ /* still */ }
@@ -816,10 +831,10 @@
   let vlRange = '6mo';
   const histClientCache = new Map(); // "symbol|range" -> punkte
 
-  async function historieHolen(symbol, range){
-    const key = symbol + '|' + range;
+  async function historieHolen(symbol, range, roh){
+    const key = symbol + '|' + range + (roh ? '|roh' : '');
     if(histClientCache.has(key)) return histClientCache.get(key);
-    const r = await fetch('api/historie?symbol=' + encodeURIComponent(symbol) + '&range=' + range);
+    const r = await fetch('api/historie?symbol=' + encodeURIComponent(symbol) + '&range=' + range + (roh ? '&roh=1' : ''));
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     if(!d.punkte || !d.punkte.length) throw new Error('leer');
@@ -849,7 +864,8 @@
     return punkte;
   }
 
-  function liniendiagramm(punkte){
+  function liniendiagramm(punkte, einheit){
+    einheit = einheit || "€";
     const B = 640, H = 220, R = { o: 14, u: 26, l: 8, r: 8 };
     const werte = punkte.map(p => p[1]);
     const min = Math.min(...werte), max = Math.max(...werte);
@@ -870,11 +886,11 @@
       '<path d="' + pfad + '" fill="none" stroke="' + farbe + '" stroke-width="2" stroke-linejoin="round"/>' +
       '<text class="vlLbl" x="' + R.l + '" y="' + (H-8) + '">' + datum(punkte[0][0]) + '</text>' +
       '<text class="vlLbl" x="' + (B-R.r) + '" y="' + (H-8) + '" text-anchor="end">' + datum(punkte[punkte.length-1][0]) + '</text>' +
-      '<text class="vlLbl" x="' + (B-R.r) + '" y="' + (R.o) + '" text-anchor="end">Hoch ' + fmt(max) + ' €</text>' +
-      '<text class="vlLbl" x="' + R.l + '" y="' + (R.o) + '">Tief ' + fmt(min) + ' €</text>' +
+      '<text class="vlLbl" x="' + (B-R.r) + '" y="' + (R.o) + '" text-anchor="end">Hoch ' + fmt(max) + ' ' + einheit + '</text>' +
+      '<text class="vlLbl" x="' + R.l + '" y="' + (R.o) + '">Tief ' + fmt(min) + ' ' + einheit + '</text>' +
       '</svg>' +
-      '<div class="vlSumme"><span class="diff ' + (diff>=0?'pos':'neg') + '">' + pfx(diff) + ' € (' + pfx(diffPzt) + ' %) im Zeitraum</span>' +
-      ' · <span style="color:var(--text-dim)">aktuell ' + fmt(letzter) + ' €</span></div>';
+      '<div class="vlSumme"><span class="diff ' + (diff>=0?'pos':'neg') + '">' + pfx(diff) + ' ' + einheit + ' (' + pfx(diffPzt) + ' %) im Zeitraum</span>' +
+      ' · <span style="color:var(--text-dim)">aktuell ' + fmt(letzter) + ' ' + einheit + '</span></div>';
   }
 
   function verlaufAuswahlFuellen(){
@@ -884,9 +900,21 @@
     const optionen = [];
     if(portfolio.length) optionen.push('<option value="__DEPOT__">Gesamtes Depot</option>');
     for(const s of symbole) optionen.push('<option value="' + esc(s) + '">' + esc(s) + '</option>');
+    if(indexOption) optionen.push('<option value="' + esc(indexOption.wert) + '">' + esc(indexOption.text) + '</option>');
     sel.innerHTML = optionen.join('');
     if(alt && [...sel.options].some(o => o.value === alt)) sel.value = alt;
     vlSymbol = sel.value || null;
+  }
+
+  let indexOption = null;
+  function chartZeigen(wert, name){
+    if(wert.startsWith('IDX:')) indexOption = { wert, text: (name || wert.slice(4)) + ' · Index' };
+    vlSymbol = wert;
+    verlaufAuswahlFuellen();
+    $('vlSymbol').value = wert;
+    vlSymbol = wert;
+    verlaufRendern();
+    $('vlChart').closest('.karte').scrollIntoView({ behavior:'smooth', block:'nearest' });
   }
 
   async function verlaufRendern(){
@@ -896,8 +924,10 @@
     hinweis.hidden = true;
     ziel.innerHTML = '<div class="leer">Lade Verlauf …</div>';
     try{
-      const punkte = vlSymbol === '__DEPOT__' ? await depotVerlauf(vlRange) : await historieHolen(vlSymbol, vlRange);
-      ziel.innerHTML = liniendiagramm(punkte);
+      const istIndex = vlSymbol.startsWith('IDX:');
+      const punkte = vlSymbol === '__DEPOT__' ? await depotVerlauf(vlRange)
+                   : await historieHolen(istIndex ? vlSymbol.slice(4) : vlSymbol, vlRange, istIndex);
+      ziel.innerHTML = liniendiagramm(punkte, istIndex ? 'Pkt.' : '€');
     }catch(e){
       ziel.innerHTML = '';
       hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
@@ -1031,6 +1061,24 @@
     a.download = 'depot-' + new Date().toISOString().slice(0,10) + '.csv';
     a.click();
     URL.revokeObjectURL(a.href);
+  });
+
+  /* ---------- Klick auf Aktie oder Index öffnet den Chart ---------- */
+  document.addEventListener('click', e=>{
+    const t = e.target;
+    if(!(t instanceof Element)) return;
+    if(t.closest('.entf') || t.closest('.vorschlag')) return;
+    const wl = t.closest('.wl-item[data-sym]');
+    if(wl){ chartZeigen(wl.getAttribute('data-sym')); return; }
+    const tr = t.closest('tr[data-sym]');
+    if(tr){ chartZeigen(tr.getAttribute('data-sym')); return; }
+    const ie = t.closest('.indexeintrag[data-idx]');
+    if(ie){ chartZeigen('IDX:' + ie.getAttribute('data-idx'), ie.getAttribute('data-name')); return; }
+  });
+  $('boersenMarker').addEventListener('click', e=>{
+    if(panWeg > 6) return; // war ein Zieh-Vorgang, kein Klick
+    const g = e.target.closest('.boersenpunkt');
+    if(g && g.getAttribute('data-idx')) chartZeigen('IDX:' + g.getAttribute('data-idx'), g.getAttribute('data-name'));
   });
 
   /* ---------- PWA ---------- */
