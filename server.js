@@ -317,9 +317,14 @@ const SERVICE_WORKER = [
 
 // ---------- Wirtschaftsnachrichten (RSS) ----------
 const STANDARD_FEEDS = [
-  "https://www.tagesschau.de/wirtschaft/index~rss2.xml",                 // deutsch, Wirtschaft allgemein
-  "https://www.cnbc.com/id/100003114/device/rss/rss.html",              // CNBC Top News (englisch, marktnah)
-  "https://feeds.content.dowjones.io/public/rss/mw_topstories"          // MarketWatch Top Stories (englisch, Finanzen)
+  "https://www.tagesschau.de/wirtschaft/index~rss2.xml",             // deutsch
+  "https://www.cnbc.com/id/100003114/device/rss/rss.html",          // CNBC Top News
+  "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",    // Wall Street Journal Markets
+  "https://feeds.content.dowjones.io/public/rss/mw_topstories",     // MarketWatch
+  "https://www.ft.com/rss/home",                                    // Financial Times
+  "https://feeds.bbci.co.uk/news/business/rss.xml",                 // BBC Business
+  "https://www.theguardian.com/uk/business/rss",                    // Guardian Business
+  "https://finance.yahoo.com/news/rssindex"                         // Yahoo Finance
 ].join(",");
 const NEWS_FEEDS = (process.env.NEWS_FEEDS || STANDARD_FEEDS)
   .split(",").map(s => s.trim()).filter(Boolean);
@@ -332,35 +337,44 @@ function xmlEntitäten(s) {
 
 async function newsAbfragen() {
   if (newsCache.daten && Date.now() - newsCache.zeit < 600000) return newsCache.daten;
-  const alle = [];
-  const ergebnisse = await Promise.allSettled(NEWS_FEEDS.map(async feed => {
-    const r = await fetch(feed, {
-      headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Kursstand-Dashboard" },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (!r.ok) throw new Error(feed + ": HTTP " + r.status);
-    const xml = await r.text();
+  const proFeed = [];   // [{ quelle, ok, eintraege }]
+  await Promise.allSettled(NEWS_FEEDS.map(async feed => {
     let quelle = feed;
-    try { quelle = new URL(feed).hostname.replace(/^www\./, ""); } catch (e) {}
-    for (const block of xml.match(/<item[\s>][\s\S]*?<\/item>/g) || []) {
-      const titel = block.match(/<title>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/title>/);
-      const link = block.match(/<link>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/link>/);
-      const datum = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
-      if (!titel) continue;
-      alle.push({
-        titel: xmlEntitäten(titel[1]),
-        link: link ? xmlEntitäten(link[1]) : "",
-        zeit: datum ? Date.parse(datum[1]) || 0 : 0,
-        quelle
+    try { quelle = new URL(feed).hostname.replace(/^www\.|^feeds\./, ""); } catch (e) {}
+    const status = { quelle, ok: false, eintraege: [] };
+    proFeed.push(status);
+    try {
+      const r = await fetch(feed, {
+        headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Kursstand-Dashboard RSS-Reader" },
+        signal: AbortSignal.timeout(10000)
       });
-    }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const xml = await r.text();
+      for (const block of xml.match(/<item[\s>][\s\S]*?<\/item>/g) || []) {
+        const titel = block.match(/<title>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/title>/);
+        const link = block.match(/<link>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/link>/);
+        const datum = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        if (!titel) continue;
+        status.eintraege.push({
+          titel: xmlEntitäten(titel[1]),
+          link: link ? xmlEntitäten(link[1]) : "",
+          zeit: datum ? Date.parse(datum[1]) || 0 : 0,
+          quelle
+        });
+      }
+      status.eintraege.sort((a, b) => b.zeit - a.zeit);
+      status.eintraege = status.eintraege.slice(0, 8); // keine Quelle dominiert
+      status.ok = status.eintraege.length > 0;
+    } catch (e) { status.fehler = String(e.message || e); }
   }));
-  if (!alle.length && ergebnisse.every(e => e.status === "rejected")) {
-    throw new Error("kein Feed erreichbar");
+  if (!proFeed.some(f => f.ok)) throw new Error("kein Feed erreichbar");
+  // Round-Robin: reihum die jeweils neueste Meldung jeder Quelle -> garantierte Vielfalt
+  const alle = [];
+  for (let i = 0; i < 8; i++) {
+    for (const f of proFeed) if (f.eintraege[i]) alle.push(f.eintraege[i]);
   }
-  alle.sort((a, b) => b.zeit - a.zeit);
-  const daten = alle.slice(0, 30);
-  newsCache = { zeit: Date.now(), daten };
+  const daten = alle.slice(0, 40);
+  newsCache = { zeit: Date.now(), daten, status: proFeed.map(f => ({ quelle: f.quelle, ok: f.ok, anzahl: f.eintraege.length, fehler: f.fehler })) };
   return daten;
 }
 
@@ -641,6 +655,11 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname === "/api/news") {
     try {
       const daten = await newsAbfragen();
+      if (u.searchParams.get("status") === "1") {
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify(newsCache.status || [], null, 1));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" });
       res.end(JSON.stringify(daten));
     } catch (e) {
