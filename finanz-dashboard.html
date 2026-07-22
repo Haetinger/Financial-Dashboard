@@ -27,6 +27,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html{scrollbar-color:var(--linie) var(--grund)}
   body{
+    padding-bottom:44px;
     background:var(--grund);
     color:var(--text);
     font-family:var(--sans);
@@ -165,6 +166,46 @@
   @keyframes blitzen{0%{border-color:var(--bernstein)}100%{border-color:var(--linie)}}
   .blitz{animation:blitzen 1.2s ease-out}
 
+  /* ---------- Monitor-Modus & Zubehör ---------- */
+  .uhrblock{display:none;font-family:var(--mono);font-size:13px;color:var(--text-dim)}
+  .uhrblock b{color:var(--text);font-size:15px}
+  .monitor .uhrblock{display:inline}
+  .statusdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;background:var(--text-dim);flex-shrink:0}
+  .statusdot.offen{background:var(--plus)}
+  .statusdot.zu{background:#5a6478}
+  @keyframes tickH{0%{color:var(--plus)}100%{color:var(--text)}}
+  @keyframes tickR{0%{color:var(--minus)}100%{color:var(--text)}}
+  .tickHoch{animation:tickH 1.6s ease-out}
+  .tickRunter{animation:tickR 1.6s ease-out}
+
+  .newsEintrag{display:flex;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--linie);text-decoration:none;color:var(--text);font-size:13px}
+  .newsEintrag:last-child{border-bottom:none}
+  .newsEintrag:hover .newsTitel{color:var(--bernstein)}
+  .newsZeit{font-family:var(--mono);font-size:11px;color:var(--text-dim);min-width:38px}
+  .newsTitel{flex:1}
+  .newsQuelle{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+
+  .ticker{position:fixed;left:0;right:0;bottom:0;height:36px;background:var(--flaeche);border-top:1px solid var(--linie);overflow:hidden;display:block;z-index:70}
+  .monitor .ticker{display:block}
+  .ticker .lauf{display:inline-block;white-space:nowrap;line-height:36px;font-family:var(--mono);font-size:12px;color:var(--text-dim);animation:laufen 90s linear infinite}
+  @keyframes laufen{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media (prefers-reduced-motion: reduce){.ticker .lauf{animation:none}}
+
+  .monitor .rahmen{max-width:none;gap:14px;padding:14px;padding-bottom:56px;grid-template-columns:repeat(3,1fr)}
+  .monitor .sek-welt{grid-column:1 / 3 !important}
+  .monitor .sek-lage{grid-column:1 / -1 !important}
+  .monitor .sek-watch{grid-column:3 / 4}
+  .monitor .sek-pf{grid-column:1 / 2}
+  .monitor .sek-verlauf{grid-column:2 / 3}
+  .monitor .sek-heat{grid-column:3 / 4}
+  .monitor .sek-alarm, .monitor .sek-allok, .monitor .sek-news, .monitor .fussnote{display:none}
+  .monitor .wl-eingabe, .monitor .pf-eingabe, .monitor #btnCsv{display:none}
+  .monitor .karteninhalt{padding:12px}
+  .monitor .topbar{padding:10px 16px}
+  @media(max-width:1100px){.monitor .rahmen{grid-template-columns:1fr 1fr}
+    .monitor .sek-welt{grid-column:1 / -1 !important}
+    .monitor .sek-watch,.monitor .sek-pf,.monitor .sek-verlauf,.monitor .sek-heat{grid-column:auto}}
+
   /* ---------- Layout ---------- */
   .rahmen{max-width:1240px;margin:0 auto;padding:24px;display:grid;gap:24px;grid-template-columns:1fr 1fr}
   @media(max-width:920px){.rahmen{grid-template-columns:1fr}}
@@ -268,13 +309,15 @@
   <div class="marke">Kurs<b>stand</b></div>
   <div class="status" id="status"><span class="dot"></span><span id="statusText">Kein API-Key</span></div>
   <div class="spacer"></div>
+  <span class="uhrblock"><span id="uhrDatum"></span> <b id="uhr"></b></span>
+  <button class="btn" id="btnMonitor" title="Kompakte Vollbild-Ansicht zum Nebenherlaufen">Monitor</button>
   <button class="btn" id="btnAktualisieren">Aktualisieren</button>
 </div>
 
 <div class="rahmen">
 
   <!-- Weltmärkte -->
-  <section class="karte" style="grid-column:1 / -1">
+  <section class="karte sek-welt" style="grid-column:1 / -1">
     <header><h2>Weltmärkte</h2><div class="spacer"></div><span class="hinweis" id="karteStand">—</span></header>
     <div class="karteninhalt">
       <div class="kartenwrap">
@@ -296,8 +339,21 @@
   </section>
 
 
+  <!-- Marktlage -->
+  <section class="karte sek-lage" style="grid-column:1 / -1">
+    <header><h2>Marktlage</h2><div class="spacer"></div><span class="hinweis">Regionen · Faktoren · Risiko</span></header>
+    <div class="karteninhalt">
+      <div class="maerkteTitel">REGIONEN (BREIT)</div>
+      <div class="indexliste" id="lageRegionen" style="margin-top:8px"></div>
+      <div class="maerkteTitel">FAKTOREN &amp; MARKTBREITE <span style="letter-spacing:0">(Tagesdifferenz der Paare)</span></div>
+      <div class="indexliste" id="lageFaktoren" style="margin-top:8px"></div>
+      <div class="maerkteTitel">ZINSEN &amp; RISIKO</div>
+      <div class="indexliste" id="lageRisiko" style="margin-top:8px"></div>
+    </div>
+  </section>
+
   <!-- Watchlist -->
-  <section class="karte">
+  <section class="karte sek-watch">
     <header>
       <h2>Watchlist</h2>
       <div class="spacer"></div>
@@ -314,7 +370,7 @@
   </section>
 
   <!-- Portfolio -->
-  <section class="karte">
+  <section class="karte sek-pf">
     <header>
       <h2>Portfolio</h2>
       <div class="spacer"></div>
@@ -344,7 +400,7 @@
   </section>
 
   <!-- Verlauf -->
-  <section class="karte">
+  <section class="karte sek-verlauf">
     <header>
       <h2>Verlauf</h2>
       <div class="spacer"></div>
@@ -363,13 +419,13 @@
   </section>
 
   <!-- Heatmap -->
-  <section class="karte">
+  <section class="karte sek-heat">
     <header><h2>Heatmap</h2><div class="spacer"></div><span class="hinweis" id="heatHinweis"></span></header>
     <div class="karteninhalt"><div class="heatmap" id="heatmap"></div></div>
   </section>
 
   <!-- Alarme -->
-  <section class="karte" style="grid-column:1 / -1">
+  <section class="karte sek-alarm" style="grid-column:1 / -1">
     <header><h2>Kurs-Alarme</h2><div class="spacer"></div><span class="hinweis">geprüft alle 5 Min · Meldung via ntfy</span></header>
     <div class="karteninhalt">
       <div class="al-eingabe">
@@ -387,8 +443,14 @@
     </div>
   </section>
 
+  <!-- Nachrichten -->
+  <section class="karte sek-news" style="grid-column:1 / -1">
+    <header><h2>Nachrichten</h2><div class="spacer"></div><span class="hinweis">Wirtschaft · alle 10 Min</span></header>
+    <div class="karteninhalt" id="newsListe"></div>
+  </section>
+
   <!-- Allokation -->
-  <section class="karte" style="grid-column:1 / -1">
+  <section class="karte sek-allok" style="grid-column:1 / -1">
     <header><h2>Allokation</h2><div class="spacer"></div><span class="hinweis">Anteil am Depotwert</span></header>
     <div class="karteninhalt allok" id="allok"></div>
   </section>
@@ -774,7 +836,7 @@
       if(d.fehler) return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + m.name + ' · ' + m.ort + '</span><span class="ikurs">—</span></div>';
       const cls = d.diff >= 0 ? 'pos' : 'neg';
       const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + ' %';
-      return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + m.name + ' · ' + m.ort + '</span>' +
+      return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '">' + statusPunkt(d.symbol) + '<span class="iname">' + m.name + ' · ' + m.ort + '</span>' +
              '<span class="ikurs">' + punkte(d.kurs, d.waehrung) + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
     }).join('');
   }
@@ -815,12 +877,13 @@
       const daten = await r.json();
       if(!Array.isArray(daten)) return;
       $('maerkteListe').innerHTML = daten.map(d => {
-        if(d.fehler) return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
+        const ziel = d.symbol === 'EURUSD=X' ? 'data-idx="EURUSD=X"' : 'data-chart="' + esc(d.symbol||'') + '"';
+        if(d.fehler) return '<div class="indexeintrag klickbar" ' + ziel + ' data-name="' + esc(d.name) + '"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
         const cls = d.diffPzt >= 0 ? 'pos' : 'neg';
         const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + ' %';
         const dez = d.name === 'EUR/USD' ? 4 : (d.kursEur >= 1000 ? 0 : 2);
         const kurs = d.kursEur.toLocaleString('de-DE',{minimumFractionDigits:dez,maximumFractionDigits:dez});
-        return '<div class="indexeintrag klickbar" data-idx="' + d.symbol + '" data-name="' + m.name + '"><span class="iname">' + esc(d.name) + '</span>' +
+        return '<div class="indexeintrag klickbar" ' + ziel + ' data-name="' + esc(d.name) + '"><span class="iname">' + esc(d.name) + '</span>' +
                '<span class="ikurs">' + kurs + ' ' + esc(d.einheit) + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
       }).join('');
     }catch(e){ /* still */ }
@@ -909,6 +972,7 @@
   let indexOption = null;
   function chartZeigen(wert, name){
     if(wert.startsWith('IDX:')) indexOption = { wert, text: (name || wert.slice(4)) + ' · Index' };
+    if(wert.startsWith('SYM:')) indexOption = { wert, text: (name || wert.slice(4)) };
     vlSymbol = wert;
     verlaufAuswahlFuellen();
     $('vlSymbol').value = wert;
@@ -925,9 +989,11 @@
     ziel.innerHTML = '<div class="leer">Lade Verlauf …</div>';
     try{
       const istIndex = vlSymbol.startsWith('IDX:');
+      const roh = vlSymbol.replace(/^(IDX:|SYM:)/, '');
       const punkte = vlSymbol === '__DEPOT__' ? await depotVerlauf(vlRange)
-                   : await historieHolen(istIndex ? vlSymbol.slice(4) : vlSymbol, vlRange, istIndex);
-      ziel.innerHTML = liniendiagramm(punkte, istIndex ? 'Pkt.' : '€');
+                   : await historieHolen(roh, vlRange, istIndex);
+      const einheit = istIndex ? (roh === 'EURUSD=X' ? '$' : 'Pkt.') : '€';
+      ziel.innerHTML = liniendiagramm(punkte, einheit);
     }catch(e){
       ziel.innerHTML = '';
       hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
@@ -1074,6 +1140,331 @@
     if(tr){ chartZeigen(tr.getAttribute('data-sym')); return; }
     const ie = t.closest('.indexeintrag[data-idx]');
     if(ie){ chartZeigen('IDX:' + ie.getAttribute('data-idx'), ie.getAttribute('data-name')); return; }
+    const ch = t.closest('[data-chart]');
+    if(ch && ch.getAttribute('data-chart')){ chartZeigen('SYM:' + ch.getAttribute('data-chart'), ch.getAttribute('data-name')); return; }
+  });
+  $('boersenMarker').addEventListener('click', e=>{
+    if(panWeg > 6) return; // war ein Zieh-Vorgang, kein Klick
+    const g = e.target.closest('.boersenpunkt');
+    if(g && g.getAttribute('data-idx')) chartZeigen('IDX:' + g.getAttribute('data-idx'), g.getAttribute('data-name'));
+  });
+
+
+  /* ================== MONITOR-MODUS ================== */
+
+  /* ---------- Uhr ---------- */
+  function uhrTicken(){
+    const jetzt = new Date();
+    $('uhr').textContent = jetzt.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    $('uhrDatum').textContent = jetzt.toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' });
+  }
+  setInterval(uhrTicken, 1000);
+  uhrTicken();
+
+  /* ---------- Handelszeiten (ohne Feiertage — nur Wochentag + Uhrzeit) ---------- */
+  const HANDEL = {
+    '^GSPC':      { tz:'America/New_York',    von: 570, bis: 960 },
+    '^IXIC':      { tz:'America/New_York',    von: 570, bis: 960 },
+    '^GSPTSE':    { tz:'America/Toronto',     von: 570, bis: 960 },
+    '^MXX':       { tz:'America/Mexico_City', von: 510, bis: 900 },
+    '^BVSP':      { tz:'America/Sao_Paulo',   von: 600, bis: 1020 },
+    '^FTSE':      { tz:'Europe/London',       von: 480, bis: 990 },
+    '^AEX':       { tz:'Europe/Amsterdam',    von: 540, bis: 1050 },
+    '^GDAXI':     { tz:'Europe/Berlin',       von: 540, bis: 1050 },
+    '^FCHI':      { tz:'Europe/Paris',        von: 540, bis: 1050 },
+    '^SSMI':      { tz:'Europe/Zurich',       von: 540, bis: 1050 },
+    'FTSEMIB.MI': { tz:'Europe/Rome',         von: 540, bis: 1050 },
+    '^IBEX':      { tz:'Europe/Madrid',       von: 540, bis: 1050 },
+    '^N225':      { tz:'Asia/Tokyo',          von: 540, bis: 900 },
+    '^KS11':      { tz:'Asia/Seoul',          von: 540, bis: 930 },
+    '000001.SS':  { tz:'Asia/Shanghai',       von: 570, bis: 900 },
+    '^TWII':      { tz:'Asia/Taipei',         von: 540, bis: 810 },
+    '^HSI':       { tz:'Asia/Hong_Kong',      von: 570, bis: 960 },
+    '^BSESN':     { tz:'Asia/Kolkata',        von: 555, bis: 930 },
+    '^STI':       { tz:'Asia/Singapore',      von: 540, bis: 1020 },
+    '^AXJO':      { tz:'Australia/Sydney',    von: 600, bis: 960 }
+  };
+
+  function boersenOffen(symbol){
+    const h = HANDEL[symbol];
+    if(!h) return null;
+    try{
+      const teile = new Intl.DateTimeFormat('de-DE', {
+        timeZone: h.tz, hour:'2-digit', minute:'2-digit', weekday:'short', hour12:false
+      }).formatToParts(new Date());
+      const t = {}; for(const p of teile) t[p.type] = p.value;
+      if(t.weekday === 'Sa' || t.weekday === 'So') return false;
+      const min = parseInt(t.hour,10) * 60 + parseInt(t.minute,10);
+      return min >= h.von && min < h.bis;
+    }catch(e){ return null; }
+  }
+
+  function statusPunkt(symbol){
+    const offen = boersenOffen(symbol);
+    if(offen === null) return '';
+    return '<span class="statusdot ' + (offen ? 'offen' : 'zu') + '" title="Börse ' + (offen ? 'geöffnet' : 'geschlossen') + '"></span>';
+  }
+
+  /* ---------- Kurs-Blinken bei Veränderung ---------- */
+  let kurseVorher = {};
+  function kursBlinken(){
+    for(const sym of Object.keys(kurse)){
+      const alt = kurseVorher[sym];
+      const neu = kurse[sym];
+      if(alt == null || neu.kursEur === alt) continue;
+      const el = $('wlListe').querySelector('.wl-item[data-sym="' + CSS.escape(sym) + '"] .kurs');
+      if(!el) continue;
+      const cls = neu.kursEur > alt ? 'tickHoch' : 'tickRunter';
+      el.classList.remove('tickHoch','tickRunter'); void el.offsetWidth;
+      el.classList.add(cls);
+    }
+    kurseVorher = Object.fromEntries(Object.entries(kurse).map(([s,q]) => [s, q.kursEur]));
+  }
+
+  /* ---------- Nachrichten ---------- */
+  let newsDaten = [];
+  async function newsLaden(){
+    try{
+      const r = await fetch('api/news');
+      if(!r.ok) return;
+      const d = await r.json();
+      if(!Array.isArray(d) || !d.length) return;
+      newsDaten = d;
+      // Liste (Normalmodus)
+      $('newsListe').innerHTML = d.slice(0,10).map(n => {
+        const zeit = n.zeit ? new Date(n.zeit).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+        return '<a class="newsEintrag" href="' + esc(n.link) + '" target="_blank" rel="noopener">' +
+               '<span class="newsZeit">' + zeit + '</span>' +
+               '<span class="newsTitel">' + esc(n.titel) + '</span>' +
+               '<span class="newsQuelle">' + esc(n.quelle) + '</span></a>';
+      }).join('');
+      // Laufband (Monitor-Modus)
+      const band = d.slice(0,12).map(n => esc(n.titel)).join('&nbsp;&nbsp;+++&nbsp;&nbsp;');
+      $('tickerLauf').innerHTML = band + '&nbsp;&nbsp;+++&nbsp;&nbsp;' + band;
+    }catch(e){ /* still */ }
+  }
+
+  /* ---------- Marktlage ---------- */
+  async function marktlageLaden(){
+    try{
+      const r = await fetch('api/marktlage');
+      if(!r.ok) return;
+      const daten = await r.json();
+      if(!Array.isArray(daten)) return;
+      const eintrag = d => {
+        if(d.fehler) return '<div class="indexeintrag"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
+        const cls = d.diffPzt >= 0 ? 'pos' : 'neg';
+        const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + (d.ratio ? ' Pp.' : ' %');
+        const dez = d.ratio ? 3 : (d.kurs >= 1000 ? 0 : 2);
+        const kurs = d.kurs.toLocaleString('de-DE',{minimumFractionDigits:dez,maximumFractionDigits:dez}) + (d.einheit ? ' ' + d.einheit : '');
+        const klick = d.idx ? ' klickbar" data-idx="' + esc(d.symbol) + '" data-name="' + esc(d.name)
+                    : d.chart ? ' klickbar" data-chart="' + esc(d.symbol) + '" data-name="' + esc(d.name)
+                    : '"';
+        return '<div class="indexeintrag' + klick + '"><span class="iname">' + esc(d.name) + '</span>' +
+               '<span class="ikurs">' + kurs + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
+      };
+      $('lageRegionen').innerHTML = daten.filter(d=>d.gruppe==='regionen').map(eintrag).join('');
+      $('lageFaktoren').innerHTML = daten.filter(d=>d.gruppe==='faktoren').map(eintrag).join('');
+      $('lageRisiko').innerHTML  = daten.filter(d=>d.gruppe==='risiko').map(eintrag).join('');
+    }catch(e){ /* still */ }
+  }
+
+  /* ---------- Monitor-Modus umschalten ---------- */
+  function monitorSetzen(an){
+    document.body.classList.toggle('monitor', an);
+    store.set('ks_monitor', an);
+    $('btnMonitor').classList.toggle('aktiv', an);
+    if(an && document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    }
+    if(!an && document.fullscreenElement){
+      document.exitFullscreen().catch(()=>{});
+    }
+  }
+  $('btnMonitor').addEventListener('click', ()=> monitorSetzen(!document.body.classList.contains('monitor')));
+  if(store.get('ks_monitor', false)) monitorSetzen(true);
+
+  /* ---------- PWA ---------- */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+
+  /* ---------- Löschen von Alarmen (globaler Klick-Handler-Zusatz) ---------- */
+  document.addEventListener('click', async e=>{
+    const t = e.target;
+    if(!(t instanceof Element)) return;
+    const al = t.getAttribute('data-al');
+    if(al){ await fetch('api/alarme?id=' + encodeURIComponent(al), { method:'DELETE' }).catch(()=>{}); alarmeRendern(); }
+  });
+
+  /* ---------- Start ---------- */
+  rendern();
+  allesLaden().then(()=>{ heatmapRendern(); verlaufRendern(); kursBlinken(); });
+  karteLaden();
+  maerkteLaden();
+  marktlageLaden();
+  alarmeRendern();
+  newsLaden();
+  setInterval(()=>{ allesLaden().then(()=>{ heatmapRendern(); kursBlinken(); }); }, 60000);
+  setInterval(karteLaden, 120000);
+  setInterval(maerkteLaden, 120000);
+  setInterval(marktlageLaden, 120000);
+  setInterval(newsLaden, 600000);
+})();
+</script>
+<div class="ticker" aria-hidden="true"><div class="lauf" id="tickerLauf"></div></div>
+</body>
+</html>
+ : 'Pkt.') : '€';
+      ziel.innerHTML = liniendiagramm(punkte, einheit);
+    }catch(e){
+      ziel.innerHTML = '';
+      hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
+      hinweis.hidden = false;
+    }
+  }
+
+  $('vlSymbol').addEventListener('change', ()=>{ vlSymbol = $('vlSymbol').value; verlaufRendern(); });
+  $('vlBereiche').addEventListener('click', e=>{
+    const b = e.target.closest('button[data-range]');
+    if(!b) return;
+    vlRange = b.getAttribute('data-range');
+    for(const k of $('vlBereiche').children) k.classList.toggle('aktiv', k === b);
+    verlaufRendern();
+  });
+
+  /* ---------- Heatmap (Treemap wie bei finviz) ---------- */
+  function treemap(items, B, H){
+    // items: [{wert, ...}] absteigend sortiert; liefert Rechtecke {x,y,w,h,item}
+    const gesamt = items.reduce((s,i)=>s+i.wert,0);
+    const skal = B*H/gesamt;
+    const flaechen = items.map(i => ({ item:i, a:i.wert*skal }));
+    const out = [];
+    let x=0, y=0, w=B, h=H, i=0;
+    while(i < flaechen.length){
+      const quer = w < h;               // Reihe entlang der kürzeren Seite
+      const seite = quer ? w : h;
+      let beste = null;
+      for(let j=i+1; j<=flaechen.length; j++){
+        const reihe = flaechen.slice(i,j);
+        const s = reihe.reduce((t,r)=>t+r.a,0);
+        const dicke = s/seite;
+        const schlecht = Math.max(...reihe.map(r => { const l=r.a/dicke; return Math.max(dicke/l, l/dicke); }));
+        if(!beste || schlecht <= beste.schlecht) beste = { j, reihe, dicke, schlecht };
+        else break;
+      }
+      let off = 0;
+      for(const r of beste.reihe){
+        const l = r.a/beste.dicke;
+        out.push(quer ? {x:x+off, y:y, w:l, h:beste.dicke, item:r.item}
+                      : {x:x, y:y+off, w:beste.dicke, h:l, item:r.item});
+        off += l;
+      }
+      if(quer){ y += beste.dicke; h -= beste.dicke; } else { x += beste.dicke; w -= beste.dicke; }
+      i = beste.j;
+    }
+    return out;
+  }
+
+  function heatFarbe(p){
+    if(p == null) return '#2A3140';
+    const t = Math.min(1, Math.abs(p)/3);         // ±3 % = volle Farbe
+    const misch = (a,b) => Math.round(a + (b-a)*t);
+    const basis = [42,49,64];                     // Grau bei 0 %
+    const ziel = p >= 0 ? [34,122,84] : [141,58,58];
+    return 'rgb(' + misch(basis[0],ziel[0]) + ',' + misch(basis[1],ziel[1]) + ',' + misch(basis[2],ziel[2]) + ')';
+  }
+
+  function heatmapRendern(){
+    const ziel = $('heatmap');
+    let items;
+    if(portfolio.length){
+      items = portfolio.map(p => {
+        const q = kurse[p.sym];
+        return q ? { sym:p.sym, wert:q.kursEur*p.stueck, p:q.diffPzt } : null;
+      }).filter(Boolean);
+      $('heatHinweis').textContent = 'Fläche = Positionswert · Farbe = Tagesveränderung';
+    } else {
+      items = watchlist.map(s => {
+        const q = kurse[s];
+        return q ? { sym:s, wert:1, p:q.diffPzt } : null;
+      }).filter(Boolean);
+      $('heatHinweis').textContent = 'Watchlist (gleiche Fläche) · Farbe = Tagesveränderung';
+    }
+    if(!items.length){ ziel.innerHTML = '<div class="leer">Heatmap erscheint, sobald Kursdaten vorhanden sind.</div>'; return; }
+    items.sort((a,b)=>b.wert-a.wert);
+    const rects = treemap(items, 100, 100);
+    ziel.innerHTML = rects.map(r => {
+      const gross = r.w*r.h > 6;
+      const p = r.item.p==null ? '' : (r.item.p>0?'+':'') + r.item.p.toFixed(2) + ' %';
+      return '<div class="heatKachel" style="left:' + r.x.toFixed(2) + '%;top:' + r.y.toFixed(2) +
+        '%;width:' + r.w.toFixed(2) + '%;height:' + r.h.toFixed(2) + '%;background:' + heatFarbe(r.item.p) + '" title="' +
+        esc(r.item.sym) + ' ' + p + '">' +
+        (gross ? '<span class="hSym">' + esc(r.item.sym) + '</span><span class="hPzt">' + p + '</span>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  /* ---------- Kurs-Alarme ---------- */
+  async function alarmeRendern(){
+    try{
+      const r = await fetch('api/alarme');
+      if(!r.ok) return;
+      const d = await r.json();
+      $('alHinweis').hidden = !!d.ntfy;
+      const liste = $('alListe');
+      if(!d.alarme.length){ liste.innerHTML = '<div class="leer">Keine Alarme angelegt.</div>'; return; }
+      liste.innerHTML = d.alarme.map(a =>
+        '<div class="alEintrag"><span class="sym">' + esc(a.symbol) + '</span>' +
+        '<span>' + (a.richtung==='unter' ? 'fällt unter' : 'steigt über') + ' <b>' + fmt(a.schwelle) + ' €</b></span>' +
+        '<button class="entf" data-al="' + esc(a.id) + '" aria-label="Alarm löschen">×</button></div>'
+      ).join('');
+    }catch(e){ /* still */ }
+  }
+
+  $('alHinzu').addEventListener('click', async ()=>{
+    const symbol = $('alSymbol').value.trim().toUpperCase();
+    const schwelle = parseFloat($('alSchwelle').value);
+    if(!symbol || !(schwelle > 0)) return;
+    try{
+      await fetch('api/alarme', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ symbol, richtung: $('alRichtung').value, schwelle }) });
+      $('alSymbol').value=''; $('alSchwelle').value='';
+      alarmeRendern();
+    }catch(e){ /* still */ }
+  });
+  sucheAnhaengen($('alSymbol'), $('alVorschlaege'), sym => { $('alSymbol').value = sym; $('alSchwelle').focus(); });
+
+  /* ---------- CSV-Export ---------- */
+  $('btnCsv').addEventListener('click', ()=>{
+    const kopf = 'Symbol;Stueck;Kaufkurs EUR;Kurs EUR;Wert EUR;GV EUR';
+    const zeilen = portfolio.map(p => {
+      const q = kurse[p.sym];
+      const z = n => n==null ? '' : n.toFixed(2).replace('.', ',');
+      return [p.sym, p.stueck, z(p.kauf), z(q?q.kursEur:null),
+              z(q?q.kursEur*p.stueck:null), z(q?(q.kursEur-p.kauf)*p.stueck:null)].join(';');
+    });
+    const blob = new Blob(['\ufeff' + [kopf, ...zeilen].join('\r\n')], { type:'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'depot-' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  /* ---------- Klick auf Aktie oder Index öffnet den Chart ---------- */
+  document.addEventListener('click', e=>{
+    const t = e.target;
+    if(!(t instanceof Element)) return;
+    if(t.closest('.entf') || t.closest('.vorschlag')) return;
+    const wl = t.closest('.wl-item[data-sym]');
+    if(wl){ chartZeigen(wl.getAttribute('data-sym')); return; }
+    const tr = t.closest('tr[data-sym]');
+    if(tr){ chartZeigen(tr.getAttribute('data-sym')); return; }
+    const ie = t.closest('.indexeintrag[data-idx]');
+    if(ie){ chartZeigen('IDX:' + ie.getAttribute('data-idx'), ie.getAttribute('data-name')); return; }
+    const ch = t.closest('[data-chart]');
+    if(ch && ch.getAttribute('data-chart')){ chartZeigen('SYM:' + ch.getAttribute('data-chart'), ch.getAttribute('data-name')); return; }
   });
   $('boersenMarker').addEventListener('click', e=>{
     if(panWeg > 6) return; // war ein Zieh-Vorgang, kein Klick
@@ -1105,5 +1496,6 @@
   setInterval(maerkteLaden, 120000);
 })();
 </script>
+<div class="ticker" aria-hidden="true"><div class="lauf" id="tickerLauf"></div></div>
 </body>
 </html>

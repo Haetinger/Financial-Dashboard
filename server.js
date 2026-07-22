@@ -219,8 +219,8 @@ async function historieAbfragen(symbol, range, roh) {
 let maerkteCache = { zeit: 0, daten: null };
 async function maerkteAbfragen() {
   if (maerkteCache.daten && Date.now() - maerkteCache.zeit < 120000) return maerkteCache.daten;
-  const [gold, oel, btc] = await Promise.allSettled([
-    aktieAbfragen("GC=F"), aktieAbfragen("BZ=F"), aktieAbfragen("BTC-EUR")
+  const [gold, oel, wti, kupfer, btc] = await Promise.allSettled([
+    aktieAbfragen("GC=F"), aktieAbfragen("BZ=F"), aktieAbfragen("CL=F"), aktieAbfragen("HG=F"), aktieAbfragen("BTC-EUR")
   ]);
   let eurusd = null;
   try {
@@ -228,16 +228,18 @@ async function maerkteAbfragen() {
     const vortag = m.chartPreviousClose ?? m.previousClose;
     eurusd = { kurs: m.regularMarketPrice, diffPzt: vortag ? (m.regularMarketPrice - vortag) / vortag * 100 : null };
   } catch (e) { /* still */ }
-  const eintrag = (name, e) =>
+  const eintrag = (name, e, symbol) =>
     e.status === "fulfilled"
-      ? { name, kursEur: e.value.kursEur, diffPzt: e.value.diffPzt, einheit: "€" }
-      : { name, fehler: true };
+      ? { name, symbol, kursEur: e.value.kursEur, diffPzt: e.value.diffPzt, einheit: "€" }
+      : { name, symbol, fehler: true };
   const daten = [
-    eintrag("Gold (Unze)", gold),
-    eintrag("Öl Brent (Barrel)", oel),
-    eintrag("Bitcoin", btc),
-    eurusd ? { name: "EUR/USD", kursEur: eurusd.kurs, diffPzt: eurusd.diffPzt, einheit: "$" }
-           : { name: "EUR/USD", fehler: true }
+    eintrag("Gold (Unze)", gold, "GC=F"),
+    eintrag("Öl Brent (Barrel)", oel, "BZ=F"),
+    eintrag("Öl WTI (Barrel)", wti, "CL=F"),
+    eintrag("Kupfer (Pfund)", kupfer, "HG=F"),
+    eintrag("Bitcoin", btc, "BTC-EUR"),
+    eurusd ? { name: "EUR/USD", symbol: "EURUSD=X", kursEur: eurusd.kurs, diffPzt: eurusd.diffPzt, einheit: "$" }
+           : { name: "EUR/USD", symbol: "EURUSD=X", fehler: true }
   ];
   if (daten.some(d => !d.fehler)) maerkteCache = { zeit: Date.now(), daten };
   return daten;
@@ -312,6 +314,106 @@ const SERVICE_WORKER = [
   "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;",
   "e.respondWith(fetch(e.request).catch(()=>caches.match('/')));});"
 ].join("\n");
+
+// ---------- Wirtschaftsnachrichten (RSS) ----------
+const NEWS_FEEDS = (process.env.NEWS_FEEDS || "https://www.tagesschau.de/wirtschaft/index~rss2.xml")
+  .split(",").map(s => s.trim()).filter(Boolean);
+let newsCache = { zeit: 0, daten: null };
+
+function xmlEntitäten(s) {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").trim();
+}
+
+async function newsAbfragen() {
+  if (newsCache.daten && Date.now() - newsCache.zeit < 600000) return newsCache.daten;
+  const alle = [];
+  const ergebnisse = await Promise.allSettled(NEWS_FEEDS.map(async feed => {
+    const r = await fetch(feed, {
+      headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Kursstand-Dashboard" },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) throw new Error(feed + ": HTTP " + r.status);
+    const xml = await r.text();
+    let quelle = feed;
+    try { quelle = new URL(feed).hostname.replace(/^www\./, ""); } catch (e) {}
+    for (const block of xml.match(/<item[\s>][\s\S]*?<\/item>/g) || []) {
+      const titel = block.match(/<title>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/title>/);
+      const link = block.match(/<link>(?:\s*<!\[CDATA\[)?([\s\S]*?)(?:\]\]>\s*)?<\/link>/);
+      const datum = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+      if (!titel) continue;
+      alle.push({
+        titel: xmlEntitäten(titel[1]),
+        link: link ? xmlEntitäten(link[1]) : "",
+        zeit: datum ? Date.parse(datum[1]) || 0 : 0,
+        quelle
+      });
+    }
+  }));
+  if (!alle.length && ergebnisse.every(e => e.status === "rejected")) {
+    throw new Error("kein Feed erreichbar");
+  }
+  alle.sort((a, b) => b.zeit - a.zeit);
+  const daten = alle.slice(0, 20);
+  newsCache = { zeit: Date.now(), daten };
+  return daten;
+}
+
+
+// ---------- Marktlage (Regionen, Faktoren, Risiko) ----------
+const rohCache = new Map(); // symbol -> { zeit, meta }
+async function rohMeta(symbol) {
+  const c = rohCache.get(symbol);
+  if (c && Date.now() - c.zeit < 120000) return c.meta;
+  const meta = await chartMeta(symbol);
+  rohCache.set(symbol, { zeit: Date.now(), meta });
+  return meta;
+}
+function metaWert(m, faktor) {
+  const kurs = m.regularMarketPrice * (faktor || 1);
+  const vortag = (m.chartPreviousClose ?? m.previousClose ?? null);
+  const diffPzt = vortag ? (m.regularMarketPrice - vortag) / vortag * 100 : null;
+  return { kurs, diffPzt };
+}
+let lageCache = { zeit: 0, daten: null };
+async function marktlageAbfragen() {
+  if (lageCache.daten && Date.now() - lageCache.zeit < 120000) return lageCache.daten;
+  const einzel = [
+    { name: "STOXX Europe 600", symbol: "^STOXX", gruppe: "regionen", einheit: "Pkt.", idx: true },
+    { name: "Welt (ACWI-ETF)", symbol: "ACWI", gruppe: "regionen", einheit: "$", chart: true },
+    { name: "Emerging Markets (EEM)", symbol: "EEM", gruppe: "regionen", einheit: "$", chart: true },
+    { name: "CSI 300 (China)", symbol: "000300.SS", gruppe: "regionen", einheit: "Pkt.", idx: true },
+    { name: "VIX (Volatilität)", symbol: "^VIX", gruppe: "risiko", einheit: "Pkt.", idx: true },
+    { name: "US-Zins 10 Jahre", symbol: "^TNX", gruppe: "risiko", einheit: "%", faktor: 0.1 },
+    { name: "Dollar-Index", symbol: "DX-Y.NYB", gruppe: "risiko", einheit: "Pkt.", idx: true }
+  ];
+  const ratios = [
+    { name: "Marktbreite (Equal-Weight ÷ S&P)", a: "RSP", b: "SPY", gruppe: "faktoren" },
+    { name: "Growth ÷ Value", a: "VUG", b: "VTV", gruppe: "faktoren" },
+    { name: "Small ÷ Large Caps", a: "IWM", b: "SPY", gruppe: "faktoren" }
+  ];
+  const symbole = [...new Set([...einzel.map(e => e.symbol), ...ratios.flatMap(r => [r.a, r.b])])];
+  const metas = new Map();
+  await Promise.allSettled(symbole.map(async sym => { metas.set(sym, await rohMeta(sym)); }));
+  const daten = [];
+  for (const e of einzel) {
+    const m = metas.get(e.symbol);
+    if (!m) { daten.push({ name: e.name, gruppe: e.gruppe, fehler: true }); continue; }
+    const w = metaWert(m, e.faktor);
+    daten.push({ name: e.name, gruppe: e.gruppe, kurs: w.kurs, diffPzt: w.diffPzt, einheit: e.einheit,
+                 symbol: e.symbol, idx: !!e.idx, chart: !!e.chart });
+  }
+  for (const r of ratios) {
+    const ma = metas.get(r.a), mb = metas.get(r.b);
+    if (!ma || !mb) { daten.push({ name: r.name, gruppe: r.gruppe, fehler: true }); continue; }
+    const wa = metaWert(ma), wb = metaWert(mb);
+    daten.push({ name: r.name, gruppe: r.gruppe, kurs: wa.kurs / wb.kurs,
+                 diffPzt: (wa.diffPzt != null && wb.diffPzt != null) ? wa.diffPzt - wb.diffPzt : null,
+                 einheit: "", ratio: true });
+  }
+  if (daten.some(d => !d.fehler)) lageCache = { zeit: Date.now(), daten };
+  return daten;
+}
 
 const server = http.createServer(async (req, res) => {
   if (!authOk(req)) {
@@ -456,6 +558,30 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname === "/sw.js") {
     res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
     res.end(SERVICE_WORKER);
+    return;
+  }
+
+  if (u.pathname === "/api/news") {
+    try {
+      const daten = await newsAbfragen();
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" });
+      res.end(JSON.stringify(daten));
+    } catch (e) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ fehler: String(e.message || e) }));
+    }
+    return;
+  }
+
+  if (u.pathname === "/api/marktlage") {
+    try {
+      const daten = await marktlageAbfragen();
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=60" });
+      res.end(JSON.stringify(daten));
+    } catch (e) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ fehler: String(e.message || e) }));
+    }
     return;
   }
 
