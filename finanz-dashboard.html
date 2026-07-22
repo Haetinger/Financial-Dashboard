@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- kursstand-build-9 -->
 <title>Kursstand · Finanz-Dashboard</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0C111B">
@@ -191,20 +192,28 @@
   @keyframes laufen{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   @media (prefers-reduced-motion: reduce){.ticker .lauf{animation:none}}
 
-  .monitor .rahmen{max-width:none;gap:14px;padding:14px;padding-bottom:56px;grid-template-columns:repeat(3,1fr)}
+  .sek-news{grid-column:auto !important}
+  .sek-allok{grid-column:auto !important}
+  .monitor .rahmen{max-width:1760px;margin:0 auto;gap:14px;padding:14px;padding-bottom:56px;grid-template-columns:repeat(3,1fr);grid-auto-flow:dense}
   .monitor .sek-welt{grid-column:1 / 3 !important}
   .monitor .sek-lage{grid-column:1 / -1 !important}
   .monitor .sek-watch{grid-column:3 / 4}
   .monitor .sek-pf{grid-column:1 / 2}
   .monitor .sek-verlauf{grid-column:2 / 3}
   .monitor .sek-heat{grid-column:3 / 4}
-  .monitor .sek-alarm, .monitor .sek-allok, .monitor .sek-news, .monitor .fussnote{display:none}
+  .monitor .sek-alarm, .monitor .sek-allok, .monitor .sek-news, .monitor .sek-mover, .monitor .fussnote{display:none}
   .monitor .wl-eingabe, .monitor .pf-eingabe, .monitor #btnCsv{display:none}
   .monitor .karteninhalt{padding:12px}
   .monitor .topbar{padding:10px 16px}
   @media(max-width:1100px){.monitor .rahmen{grid-template-columns:1fr 1fr}
     .monitor .sek-welt{grid-column:1 / -1 !important}
     .monitor .sek-watch,.monitor .sek-pf,.monitor .sek-verlauf,.monitor .sek-heat{grid-column:auto}}
+
+  .moverRaster{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+  .moverSpalte h3{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:.05em;margin-bottom:8px}
+  .moverEintrag{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:6px;background:var(--flaeche-hoch);border:1px solid var(--linie);margin-bottom:6px}
+  .moverEintrag:hover{border-color:var(--bernstein)}
+  .moverEintrag .msym{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* ---------- Layout ---------- */
   .rahmen{max-width:1240px;margin:0 auto;padding:24px;display:grid;gap:24px;grid-template-columns:1fr 1fr}
@@ -352,6 +361,15 @@
     </div>
   </section>
 
+  <!-- Marktbewegungen -->
+  <section class="karte sek-mover" style="grid-column:1 / -1">
+    <header><h2>Marktbewegungen</h2><div class="spacer"></div><span class="hinweis">S&amp;P-100 + DAX · alle 10 Min</span></header>
+    <div class="karteninhalt">
+      <div class="moverRaster" id="moverRaster"></div>
+      <div class="leer" id="moverHinweis">Lade Marktbewegungen …</div>
+    </div>
+  </section>
+
   <!-- Watchlist -->
   <section class="karte sek-watch">
     <header>
@@ -456,7 +474,7 @@
   </section>
 
   <div class="fussnote">
-    Alle Kurse: Yahoo Finance via eigenes Backend · Umrechnung in EUR (bei Fremdwährungen zum aktuellen Wechselkurs) · Kurse ggf. verzögert · keine Anlageberatung
+    Alle Kurse: Yahoo Finance via eigenes Backend · Umrechnung in EUR (bei Fremdwährungen zum aktuellen Wechselkurs) · Kurse ggf. verzögert · keine Anlageberatung · kursstand-build-9
   </div>
 </div>
 
@@ -1239,7 +1257,7 @@
                '<span class="newsQuelle">' + esc(n.quelle) + '</span></a>';
       }).join('');
       // Laufband (Monitor-Modus)
-      const band = d.slice(0,12).map(n => esc(n.titel)).join('&nbsp;&nbsp;+++&nbsp;&nbsp;');
+      const band = d.slice(0,16).map(n => esc(n.titel) + ' <span style=\"opacity:.55\">[' + esc(n.quelle) + ']</span>').join('&nbsp;&nbsp;+++&nbsp;&nbsp;');
       $('tickerLauf').innerHTML = band + '&nbsp;&nbsp;+++&nbsp;&nbsp;' + band;
     }catch(e){ /* still */ }
   }
@@ -1267,6 +1285,35 @@
       $('lageFaktoren').innerHTML = daten.filter(d=>d.gruppe==='faktoren').map(eintrag).join('');
       $('lageRisiko').innerHTML  = daten.filter(d=>d.gruppe==='risiko').map(eintrag).join('');
     }catch(e){ /* still */ }
+  }
+
+  /* ---------- Marktbewegungen ---------- */
+  async function moversLaden(){
+    try{
+      const r = await fetch('api/movers');
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if(!d.gewinner) throw new Error('leer');
+      const spalte = (titel, liste, wertFmt) =>
+        '<div class="moverSpalte"><h3>' + titel + '</h3>' +
+        (liste.length ? liste.map(e => {
+          const cls = e.diffPzt >= 0 ? 'pos' : 'neg';
+          return '<div class="moverEintrag klickbar" data-chart="' + esc(e.symbol) + '" data-name="' + esc(e.symbol) + '">' +
+                 '<span class="msym">' + esc(e.symbol) + '</span>' +
+                 '<span class="diff ' + cls + '">' + wertFmt(e) + '</span></div>';
+        }).join('') : '<div class="leer" style="font-size:12px">aktuell keine</div>') + '</div>';
+      const pz = e => (e.diffPzt>0?'+':'') + e.diffPzt.toFixed(2) + ' %';
+      $('moverRaster').innerHTML =
+        spalte('TOP-GEWINNER', d.gewinner, pz) +
+        spalte('TOP-VERLIERER', d.verlierer, pz) +
+        spalte('GRÖSSTE SCHWANKUNG', d.volatil, e => e.wert.toFixed(2) + ' %') +
+        spalte('NEUE 52W-HOCHS', d.hochs, pz) +
+        spalte('NEUE 52W-TIEFS', d.tiefs, pz);
+      $('moverHinweis').hidden = true;
+    }catch(e){
+      $('moverHinweis').hidden = false;
+      $('moverHinweis').textContent = 'Marktbewegungen derzeit nicht verfügbar.';
+    }
   }
 
   /* ---------- Monitor-Modus umschalten ---------- */
@@ -1303,197 +1350,15 @@
   karteLaden();
   maerkteLaden();
   marktlageLaden();
+  moversLaden();
   alarmeRendern();
   newsLaden();
   setInterval(()=>{ allesLaden().then(()=>{ heatmapRendern(); kursBlinken(); }); }, 60000);
   setInterval(karteLaden, 120000);
   setInterval(maerkteLaden, 120000);
   setInterval(marktlageLaden, 120000);
+  setInterval(moversLaden, 600000);
   setInterval(newsLaden, 600000);
-})();
-</script>
-<div class="ticker" aria-hidden="true"><div class="lauf" id="tickerLauf"></div></div>
-</body>
-</html>
- : 'Pkt.') : '€';
-      ziel.innerHTML = liniendiagramm(punkte, einheit);
-    }catch(e){
-      ziel.innerHTML = '';
-      hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
-      hinweis.hidden = false;
-    }
-  }
-
-  $('vlSymbol').addEventListener('change', ()=>{ vlSymbol = $('vlSymbol').value; verlaufRendern(); });
-  $('vlBereiche').addEventListener('click', e=>{
-    const b = e.target.closest('button[data-range]');
-    if(!b) return;
-    vlRange = b.getAttribute('data-range');
-    for(const k of $('vlBereiche').children) k.classList.toggle('aktiv', k === b);
-    verlaufRendern();
-  });
-
-  /* ---------- Heatmap (Treemap wie bei finviz) ---------- */
-  function treemap(items, B, H){
-    // items: [{wert, ...}] absteigend sortiert; liefert Rechtecke {x,y,w,h,item}
-    const gesamt = items.reduce((s,i)=>s+i.wert,0);
-    const skal = B*H/gesamt;
-    const flaechen = items.map(i => ({ item:i, a:i.wert*skal }));
-    const out = [];
-    let x=0, y=0, w=B, h=H, i=0;
-    while(i < flaechen.length){
-      const quer = w < h;               // Reihe entlang der kürzeren Seite
-      const seite = quer ? w : h;
-      let beste = null;
-      for(let j=i+1; j<=flaechen.length; j++){
-        const reihe = flaechen.slice(i,j);
-        const s = reihe.reduce((t,r)=>t+r.a,0);
-        const dicke = s/seite;
-        const schlecht = Math.max(...reihe.map(r => { const l=r.a/dicke; return Math.max(dicke/l, l/dicke); }));
-        if(!beste || schlecht <= beste.schlecht) beste = { j, reihe, dicke, schlecht };
-        else break;
-      }
-      let off = 0;
-      for(const r of beste.reihe){
-        const l = r.a/beste.dicke;
-        out.push(quer ? {x:x+off, y:y, w:l, h:beste.dicke, item:r.item}
-                      : {x:x, y:y+off, w:beste.dicke, h:l, item:r.item});
-        off += l;
-      }
-      if(quer){ y += beste.dicke; h -= beste.dicke; } else { x += beste.dicke; w -= beste.dicke; }
-      i = beste.j;
-    }
-    return out;
-  }
-
-  function heatFarbe(p){
-    if(p == null) return '#2A3140';
-    const t = Math.min(1, Math.abs(p)/3);         // ±3 % = volle Farbe
-    const misch = (a,b) => Math.round(a + (b-a)*t);
-    const basis = [42,49,64];                     // Grau bei 0 %
-    const ziel = p >= 0 ? [34,122,84] : [141,58,58];
-    return 'rgb(' + misch(basis[0],ziel[0]) + ',' + misch(basis[1],ziel[1]) + ',' + misch(basis[2],ziel[2]) + ')';
-  }
-
-  function heatmapRendern(){
-    const ziel = $('heatmap');
-    let items;
-    if(portfolio.length){
-      items = portfolio.map(p => {
-        const q = kurse[p.sym];
-        return q ? { sym:p.sym, wert:q.kursEur*p.stueck, p:q.diffPzt } : null;
-      }).filter(Boolean);
-      $('heatHinweis').textContent = 'Fläche = Positionswert · Farbe = Tagesveränderung';
-    } else {
-      items = watchlist.map(s => {
-        const q = kurse[s];
-        return q ? { sym:s, wert:1, p:q.diffPzt } : null;
-      }).filter(Boolean);
-      $('heatHinweis').textContent = 'Watchlist (gleiche Fläche) · Farbe = Tagesveränderung';
-    }
-    if(!items.length){ ziel.innerHTML = '<div class="leer">Heatmap erscheint, sobald Kursdaten vorhanden sind.</div>'; return; }
-    items.sort((a,b)=>b.wert-a.wert);
-    const rects = treemap(items, 100, 100);
-    ziel.innerHTML = rects.map(r => {
-      const gross = r.w*r.h > 6;
-      const p = r.item.p==null ? '' : (r.item.p>0?'+':'') + r.item.p.toFixed(2) + ' %';
-      return '<div class="heatKachel" style="left:' + r.x.toFixed(2) + '%;top:' + r.y.toFixed(2) +
-        '%;width:' + r.w.toFixed(2) + '%;height:' + r.h.toFixed(2) + '%;background:' + heatFarbe(r.item.p) + '" title="' +
-        esc(r.item.sym) + ' ' + p + '">' +
-        (gross ? '<span class="hSym">' + esc(r.item.sym) + '</span><span class="hPzt">' + p + '</span>' : '') +
-      '</div>';
-    }).join('');
-  }
-
-  /* ---------- Kurs-Alarme ---------- */
-  async function alarmeRendern(){
-    try{
-      const r = await fetch('api/alarme');
-      if(!r.ok) return;
-      const d = await r.json();
-      $('alHinweis').hidden = !!d.ntfy;
-      const liste = $('alListe');
-      if(!d.alarme.length){ liste.innerHTML = '<div class="leer">Keine Alarme angelegt.</div>'; return; }
-      liste.innerHTML = d.alarme.map(a =>
-        '<div class="alEintrag"><span class="sym">' + esc(a.symbol) + '</span>' +
-        '<span>' + (a.richtung==='unter' ? 'fällt unter' : 'steigt über') + ' <b>' + fmt(a.schwelle) + ' €</b></span>' +
-        '<button class="entf" data-al="' + esc(a.id) + '" aria-label="Alarm löschen">×</button></div>'
-      ).join('');
-    }catch(e){ /* still */ }
-  }
-
-  $('alHinzu').addEventListener('click', async ()=>{
-    const symbol = $('alSymbol').value.trim().toUpperCase();
-    const schwelle = parseFloat($('alSchwelle').value);
-    if(!symbol || !(schwelle > 0)) return;
-    try{
-      await fetch('api/alarme', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ symbol, richtung: $('alRichtung').value, schwelle }) });
-      $('alSymbol').value=''; $('alSchwelle').value='';
-      alarmeRendern();
-    }catch(e){ /* still */ }
-  });
-  sucheAnhaengen($('alSymbol'), $('alVorschlaege'), sym => { $('alSymbol').value = sym; $('alSchwelle').focus(); });
-
-  /* ---------- CSV-Export ---------- */
-  $('btnCsv').addEventListener('click', ()=>{
-    const kopf = 'Symbol;Stueck;Kaufkurs EUR;Kurs EUR;Wert EUR;GV EUR';
-    const zeilen = portfolio.map(p => {
-      const q = kurse[p.sym];
-      const z = n => n==null ? '' : n.toFixed(2).replace('.', ',');
-      return [p.sym, p.stueck, z(p.kauf), z(q?q.kursEur:null),
-              z(q?q.kursEur*p.stueck:null), z(q?(q.kursEur-p.kauf)*p.stueck:null)].join(';');
-    });
-    const blob = new Blob(['\ufeff' + [kopf, ...zeilen].join('\r\n')], { type:'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'depot-' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  /* ---------- Klick auf Aktie oder Index öffnet den Chart ---------- */
-  document.addEventListener('click', e=>{
-    const t = e.target;
-    if(!(t instanceof Element)) return;
-    if(t.closest('.entf') || t.closest('.vorschlag')) return;
-    const wl = t.closest('.wl-item[data-sym]');
-    if(wl){ chartZeigen(wl.getAttribute('data-sym')); return; }
-    const tr = t.closest('tr[data-sym]');
-    if(tr){ chartZeigen(tr.getAttribute('data-sym')); return; }
-    const ie = t.closest('.indexeintrag[data-idx]');
-    if(ie){ chartZeigen('IDX:' + ie.getAttribute('data-idx'), ie.getAttribute('data-name')); return; }
-    const ch = t.closest('[data-chart]');
-    if(ch && ch.getAttribute('data-chart')){ chartZeigen('SYM:' + ch.getAttribute('data-chart'), ch.getAttribute('data-name')); return; }
-  });
-  $('boersenMarker').addEventListener('click', e=>{
-    if(panWeg > 6) return; // war ein Zieh-Vorgang, kein Klick
-    const g = e.target.closest('.boersenpunkt');
-    if(g && g.getAttribute('data-idx')) chartZeigen('IDX:' + g.getAttribute('data-idx'), g.getAttribute('data-name'));
-  });
-
-  /* ---------- PWA ---------- */
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  }
-
-  /* ---------- Löschen von Alarmen (globaler Klick-Handler-Zusatz) ---------- */
-  document.addEventListener('click', async e=>{
-    const t = e.target;
-    if(!(t instanceof Element)) return;
-    const al = t.getAttribute('data-al');
-    if(al){ await fetch('api/alarme?id=' + encodeURIComponent(al), { method:'DELETE' }).catch(()=>{}); alarmeRendern(); }
-  });
-
-  /* ---------- Start ---------- */
-  rendern();
-  allesLaden().then(()=>{ heatmapRendern(); verlaufRendern(); });
-  karteLaden();
-  maerkteLaden();
-  alarmeRendern();
-  setInterval(()=>{ allesLaden().then(heatmapRendern); }, 60000);
-  setInterval(karteLaden, 120000);
-  setInterval(maerkteLaden, 120000);
 })();
 </script>
 <div class="ticker" aria-hidden="true"><div class="lauf" id="tickerLauf"></div></div>

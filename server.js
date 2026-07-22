@@ -308,7 +308,7 @@ const MANIFEST = JSON.stringify({
   icons: [{ src: PWA_ICON, sizes: "any", type: "image/svg+xml", purpose: "any" }]
 });
 const SERVICE_WORKER = [
-  "const CACHE='kursstand-v1';",
+  "const CACHE='kursstand-v2';",
   "self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.add('/')));});",
   "self.addEventListener('activate',e=>self.clients.claim());",
   "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;",
@@ -316,7 +316,12 @@ const SERVICE_WORKER = [
 ].join("\n");
 
 // ---------- Wirtschaftsnachrichten (RSS) ----------
-const NEWS_FEEDS = (process.env.NEWS_FEEDS || "https://www.tagesschau.de/wirtschaft/index~rss2.xml")
+const STANDARD_FEEDS = [
+  "https://www.tagesschau.de/wirtschaft/index~rss2.xml",                 // deutsch, Wirtschaft allgemein
+  "https://www.cnbc.com/id/100003114/device/rss/rss.html",              // CNBC Top News (englisch, marktnah)
+  "https://feeds.content.dowjones.io/public/rss/mw_topstories"          // MarketWatch Top Stories (englisch, Finanzen)
+].join(",");
+const NEWS_FEEDS = (process.env.NEWS_FEEDS || STANDARD_FEEDS)
   .split(",").map(s => s.trim()).filter(Boolean);
 let newsCache = { zeit: 0, daten: null };
 
@@ -354,7 +359,7 @@ async function newsAbfragen() {
     throw new Error("kein Feed erreichbar");
   }
   alle.sort((a, b) => b.zeit - a.zeit);
-  const daten = alle.slice(0, 20);
+  const daten = alle.slice(0, 30);
   newsCache = { zeit: Date.now(), daten };
   return daten;
 }
@@ -413,6 +418,78 @@ async function marktlageAbfragen() {
   }
   if (daten.some(d => !d.fehler)) lageCache = { zeit: Date.now(), daten };
   return daten;
+}
+
+// ---------- Marktbewegungen (Gewinner/Verlierer/Volatilität/52W) ----------
+// Festes Universum: S&P-100-Kern + DAX. Kein Gesamtmarkt-Screener, dafür robust.
+const UNIVERSUM = [
+  // USA (S&P-100-Kern)
+  "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","BRK-B","AVGO","JPM",
+  "LLY","V","UNH","XOM","MA","COST","HD","PG","JNJ","NFLX",
+  "ABBV","BAC","CRM","CVX","KO","AMD","PEP","TMO","WMT","MCD",
+  "CSCO","ACN","ADBE","LIN","ORCL","ABT","WFC","IBM","GE","TXN",
+  "QCOM","CAT","DIS","VZ","INTU","AMGN","PFE","PM","NEE","ISRG",
+  "NOW","GS","SPGI","UBER","RTX","HON","UNP","AMAT","BLK","T",
+  "LOW","BKNG","COP","MS","SYK","ELV","SCHW","LMT","VRTX","ADI",
+  "C","DE","PLD","MDT","CB","REGN","BSX","PANW","MMC","SBUX",
+  "GILD","ADP","MU","LRCX","BA","MO","TJX","CI","INTC","NKE",
+  "PYPL","CMCSA","EMR","SO","DUK",
+  // Deutschland (DAX-Kern)
+  "SAP.DE","SIE.DE","ALV.DE","DTE.DE","AIR.DE","MUV2.DE","MBG.DE","BMW.DE",
+  "BAS.DE","BAYN.DE","IFX.DE","DBK.DE","DB1.DE","ADS.DE","EOAN.DE","RWE.DE",
+  "DHL.DE","HEN3.DE","VOW3.DE","MRK.DE","SHL.DE","ZAL.DE","FRE.DE","CON.DE",
+  "HEI.DE","MTX.DE","RHM.DE","VNA.DE","PUM.DE","BEI.DE"
+];
+let moverCache = { zeit: 0, daten: null };
+let moverLaeuft = null;
+
+async function moverBerechnen() {
+  const werte = [];
+  const stapelGroesse = 15; // schonend in Stapeln abfragen
+  for (let i = 0; i < UNIVERSUM.length; i += stapelGroesse) {
+    const stapel = UNIVERSUM.slice(i, i + stapelGroesse);
+    const ergebnisse = await Promise.allSettled(stapel.map(chartMeta));
+    ergebnisse.forEach((e, j) => {
+      if (e.status !== "fulfilled") return;
+      const m = e.value;
+      const kurs = m.regularMarketPrice;
+      const vortag = m.chartPreviousClose ?? m.previousClose;
+      const hoch = m.regularMarketDayHigh, tief = m.regularMarketDayLow;
+      if (!kurs || !vortag) return;
+      werte.push({
+        symbol: stapel[j],
+        diffPzt: (kurs - vortag) / vortag * 100,
+        volPzt: (hoch != null && tief != null) ? (hoch - tief) / vortag * 100 : null,
+        w52hAbstand: m.fiftyTwoWeekHigh ? (kurs / m.fiftyTwoWeekHigh - 1) * 100 : null,
+        w52tAbstand: m.fiftyTwoWeekLow ? (kurs / m.fiftyTwoWeekLow - 1) * 100 : null
+      });
+    });
+  }
+  if (!werte.length) throw new Error("keine Universum-Daten");
+  const top = (feld, richtung, filter) => werte
+    .filter(w => w[feld] != null && (!filter || filter(w)))
+    .sort((a, b) => richtung * (b[feld] - a[feld]))
+    .slice(0, 6)
+    .map(w => ({ symbol: w.symbol, diffPzt: +w.diffPzt.toFixed(2),
+                 wert: +w[feld].toFixed(2) }));
+  return {
+    stand: Date.now(),
+    gewinner: top("diffPzt", 1),
+    verlierer: top("diffPzt", -1),
+    volatil: top("volPzt", 1),
+    hochs: top("w52hAbstand", 1, w => w.w52hAbstand >= -0.5),   // max. 0,5 % unterm 52W-Hoch
+    tiefs: top("w52tAbstand", -1, w => w.w52tAbstand <= 0.5)    // max. 0,5 % überm 52W-Tief
+  };
+}
+
+async function moversAbfragen() {
+  if (moverCache.daten && Date.now() - moverCache.zeit < 600000) return moverCache.daten;
+  if (!moverLaeuft) {
+    moverLaeuft = moverBerechnen()
+      .then(d => { moverCache = { zeit: Date.now(), daten: d }; return d; })
+      .finally(() => { moverLaeuft = null; });
+  }
+  return moverLaeuft;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -577,6 +654,18 @@ const server = http.createServer(async (req, res) => {
     try {
       const daten = await marktlageAbfragen();
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=60" });
+      res.end(JSON.stringify(daten));
+    } catch (e) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ fehler: String(e.message || e) }));
+    }
+    return;
+  }
+
+  if (u.pathname === "/api/movers") {
+    try {
+      const daten = await moversAbfragen();
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" });
       res.end(JSON.stringify(daten));
     } catch (e) {
       res.writeHead(502, { "Content-Type": "application/json" });
