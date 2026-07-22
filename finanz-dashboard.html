@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kursstand · Finanz-Dashboard</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0C111B">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -107,6 +109,7 @@
     padding:9px 12px;font-size:13px;border-bottom:1px solid var(--linie);
   }
   .vorschlag:last-child{border-bottom:none}
+  .pf-eingabe .vorschlaege{top:auto;bottom:calc(100% + 4px)}
   .vorschlag:hover,.vorschlag:focus-visible{background:var(--flaeche)}
   .vorschlag .vsym{font-family:var(--mono);font-weight:600}
   .vorschlag .vname{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -114,7 +117,7 @@
 
   /* ---------- Karten-Zoom ---------- */
   .kartenwrap{position:relative;overflow:hidden;border-radius:8px}
-  .kartenwrap svg{cursor:grab;touch-action:none}
+  .kartenwrap svg{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
   .kartenwrap svg:active{cursor:grabbing}
   .zoomknoepfe{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:10}
   .zoomknopf{
@@ -123,6 +126,38 @@
     display:flex;align-items:center;justify-content:center;
   }
   .zoomknopf:hover{border-color:var(--bernstein)}
+
+
+  /* ---------- Verlauf ---------- */
+  .zeitwahl{display:flex;gap:6px;margin-bottom:12px}
+  .btn.aktiv{border-color:var(--bernstein);color:var(--bernstein)}
+  .vlSvg{width:100%;height:auto;display:block}
+  .vlLbl{font-family:var(--mono);font-size:10px;fill:var(--text-dim)}
+  .vlSumme{font-family:var(--mono);font-size:12px;margin-top:8px}
+  select.feld{appearance:auto;background:var(--grund)}
+
+  /* ---------- Heatmap ---------- */
+  .heatmap{position:relative;width:100%;height:280px;border-radius:8px;overflow:hidden}
+  .heatKachel{
+    position:absolute;box-sizing:border-box;border:1px solid var(--grund);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    overflow:hidden;font-family:var(--mono);color:var(--text);
+  }
+  .heatKachel .hSym{font-weight:600;font-size:12px}
+  .heatKachel .hPzt{font-size:10px;opacity:.85}
+
+  /* ---------- Alarme ---------- */
+  .al-eingabe{display:grid;grid-template-columns:1fr auto 110px auto;gap:8px;margin-bottom:14px;position:relative}
+  @media(max-width:560px){.al-eingabe{grid-template-columns:1fr 1fr}}
+  .alEintrag{
+    display:flex;align-items:center;gap:12px;
+    background:var(--flaeche-hoch);border:1px solid var(--linie);border-radius:8px;
+    padding:9px 12px;margin-bottom:8px;font-size:13px;
+  }
+  .alEintrag .sym{font-family:var(--mono);font-weight:600}
+  .alEintrag .entf{margin-left:auto;background:none;border:none;color:var(--text-dim);font-size:15px}
+  .alEintrag .entf:hover{color:var(--minus)}
+  .maerkteTitel{font-size:11px;color:var(--text-dim);font-family:var(--mono);letter-spacing:.05em;margin-top:14px}
 
   /* ---------- Layout ---------- */
   .rahmen{max-width:1240px;margin:0 auto;padding:24px;display:grid;gap:24px;grid-template-columns:1fr 1fr}
@@ -248,6 +283,8 @@
       </svg>
       </div>
       <div class="indexliste" id="indexliste"></div>
+      <div class="maerkteTitel">ROHSTOFFE · KRYPTO · DEVISEN</div>
+      <div class="indexliste" id="maerkteListe" style="margin-top:8px"></div>
       <div class="kartenhinweis" id="karteHinweis" hidden>Indexdaten nicht erreichbar — die Weltkarte braucht den Server-Baustein (server.js). Direkt aus der Datei geöffnet bleibt sie leer.</div>
     </div>
   </section>
@@ -275,6 +312,7 @@
     <header>
       <h2>Portfolio</h2>
       <div class="spacer"></div>
+      <button class="btn klein" id="btnCsv">CSV</button>
       <span class="hinweis">Einstand in EUR</span>
     </header>
     <div class="karteninhalt">
@@ -296,6 +334,50 @@
         <input class="feld" id="pfKauf" placeholder="Kaufkurs €" type="number" min="0" step="any">
         <button class="btn primaer" id="pfHinzu">Position anlegen</button>
       </div>
+    </div>
+  </section>
+
+  <!-- Verlauf -->
+  <section class="karte">
+    <header>
+      <h2>Verlauf</h2>
+      <div class="spacer"></div>
+      <select class="feld" id="vlSymbol" style="width:auto;padding:5px 10px" aria-label="Symbol für Verlauf"></select>
+    </header>
+    <div class="karteninhalt">
+      <div class="zeitwahl" id="vlBereiche">
+        <button class="btn klein" data-range="1mo">1M</button>
+        <button class="btn klein aktiv" data-range="6mo">6M</button>
+        <button class="btn klein" data-range="1y">1J</button>
+        <button class="btn klein" data-range="5y">5J</button>
+      </div>
+      <div id="vlChart"></div>
+      <div class="leer" id="vlHinweis" hidden></div>
+    </div>
+  </section>
+
+  <!-- Heatmap -->
+  <section class="karte">
+    <header><h2>Heatmap</h2><div class="spacer"></div><span class="hinweis" id="heatHinweis"></span></header>
+    <div class="karteninhalt"><div class="heatmap" id="heatmap"></div></div>
+  </section>
+
+  <!-- Alarme -->
+  <section class="karte" style="grid-column:1 / -1">
+    <header><h2>Kurs-Alarme</h2><div class="spacer"></div><span class="hinweis">geprüft alle 5 Min · Meldung via ntfy</span></header>
+    <div class="karteninhalt">
+      <div class="al-eingabe">
+        <input class="feld" id="alSymbol" placeholder="Name oder Symbol" autocomplete="off">
+        <div class="vorschlaege" id="alVorschlaege" hidden></div>
+        <select class="feld" id="alRichtung" aria-label="Richtung">
+          <option value="unter">fällt unter</option>
+          <option value="ueber">steigt über</option>
+        </select>
+        <input class="feld" id="alSchwelle" type="number" min="0" step="any" placeholder="Schwelle €">
+        <button class="btn primaer" id="alHinzu">Alarm anlegen</button>
+      </div>
+      <div id="alListe"></div>
+      <div class="leer" id="alHinweis" hidden>Hinweis: NTFY_URL ist nicht gesetzt — Alarme werden gespeichert, aber es gehen keine Benachrichtigungen raus. In der .env z. B. NTFY_URL=https://ntfy.sh/dein-geheimes-thema eintragen.</div>
     </div>
   </section>
 
@@ -517,19 +599,27 @@
   });
 
   /* ---------- Weltmärkte-Karte ---------- */
-  const MARKER = {"^GSPC":{"name":"S&P 500","ort":"New York","x":315.4,"y":117.9},"^GSPTSE":{"name":"TSX","ort":"Toronto","x":304.7,"y":108.7},"^BVSP":{"name":"Bovespa","ort":"São Paulo","x":376.8,"y":320.2},"^FTSE":{"name":"FTSE 100","ort":"London","x":499.7,"y":84.6},"^GDAXI":{"name":"DAX","ort":"Frankfurt","x":520.6,"y":88.9},"^FCHI":{"name":"CAC 40","ort":"Paris","x":505.6,"y":92.7},"^N225":{"name":"Nikkei 225","ort":"Tokio","x":855.7,"y":133.7},"^HSI":{"name":"Hang Seng","ort":"Hongkong","x":802.5,"y":175.9},"000001.SS":{"name":"SSE Comp.","ort":"Shanghai","x":814.2,"y":147.8},"^BSESN":{"name":"Sensex","ort":"Mumbai","x":694.3,"y":186.1},"^KS11":{"name":"KOSPI","ort":"Seoul","x":821,"y":127.8},"^AXJO":{"name":"ASX 200","ort":"Sydney","x":887.7,"y":352.8}};
+  const MARKER = {"^GSPC":{"name":"S&P 500","ort":"New York","x":315.4,"y":117.9},"^GSPTSE":{"name":"TSX","ort":"Toronto","x":304.7,"y":108.7},"^BVSP":{"name":"Bovespa","ort":"São Paulo","x":376.8,"y":320.2},"^FTSE":{"name":"FTSE 100","ort":"London","x":499.7,"y":84.6},"^GDAXI":{"name":"DAX","ort":"Frankfurt","x":520.6,"y":88.9},"^FCHI":{"name":"CAC 40","ort":"Paris","x":505.6,"y":92.7},"^N225":{"name":"Nikkei 225","ort":"Tokio","x":855.7,"y":133.7},"^HSI":{"name":"Hang Seng","ort":"Hongkong","x":802.5,"y":175.9},"000001.SS":{"name":"SSE Comp.","ort":"Shanghai","x":814.2,"y":147.8},"^BSESN":{"name":"Sensex","ort":"Mumbai","x":694.3,"y":186.1},"^KS11":{"name":"KOSPI","ort":"Seoul","x":821,"y":127.8},"^AXJO":{"name":"ASX 200","ort":"Sydney","x":887.7,"y":352.8},"^IXIC":{"name":"NASDAQ","ort":"New York","x":321.4,"y":126.9},"^IBEX":{"name":"IBEX 35","ort":"Madrid","x":490.8,"y":118.8},"FTSEMIB.MI":{"name":"FTSE MIB","ort":"Mailand","x":522.4,"y":103.1},"^SSMI":{"name":"SMI","ort":"Zürich","x":520.6,"y":97.2},"^AEX":{"name":"AEX","ort":"Amsterdam","x":511.5,"y":82},"^TWII":{"name":"TAIEX","ort":"Taipeh","x":820,"y":167.3},"^STI":{"name":"STI","ort":"Singapur","x":781.6,"y":241.9},"^MXX":{"name":"IPC","ort":"Mexiko-Stadt","x":235.8,"y":185}};
 
   // Beschriftungs-Positionen, damit sich eng liegende Börsenplätze nicht überlappen
   const LABELPOS = {
-    "^GSPC":     { dx: 10, dy: 12, anchor: "start" },   // New York: rechts unten
-    "^GSPTSE":   { dx: -10, dy: -8, anchor: "end" },    // Toronto: links oben
-    "^FTSE":     { dx: -10, dy: -8, anchor: "end" },    // London: links oben
-    "^GDAXI":    { dx: 10, dy: -6, anchor: "start" },   // Frankfurt: rechts oben
-    "^FCHI":     { dx: -10, dy: 16, anchor: "end" },    // Paris: links unten
-    "^N225":     { dx: 10, dy: -6, anchor: "start" },   // Tokio: rechts oben
-    "^KS11":     { dx: -10, dy: -10, anchor: "end" },   // Seoul: links oben
-    "000001.SS": { dx: -10, dy: 10, anchor: "end" },    // Shanghai: links unten
-    "^HSI":      { dx: 10, dy: 16, anchor: "start" }    // Hongkong: rechts unten
+    "^GSPC":      { dx: 10,  dy: -6,  anchor: "start" },  // New York S&P: rechts oben
+    "^IXIC":      { dx: 10,  dy: 14,  anchor: "start" },  // New York NASDAQ: rechts unten
+    "^GSPTSE":    { dx: -10, dy: -8,  anchor: "end" },    // Toronto: links oben
+    "^MXX":       { dx: 10,  dy: 4,   anchor: "start" },  // Mexiko-Stadt
+    "^FTSE":      { dx: -10, dy: -8,  anchor: "end" },    // London: links oben
+    "^AEX":       { dx: 10,  dy: -12, anchor: "start" },  // Amsterdam: rechts oben
+    "^GDAXI":     { dx: 12,  dy: 0,   anchor: "start" },  // Frankfurt: rechts
+    "^FCHI":      { dx: -10, dy: 14,  anchor: "end" },    // Paris: links unten
+    "^SSMI":      { dx: -10, dy: 6,   anchor: "end" },    // Zürich: links
+    "FTSEMIB.MI": { dx: 10,  dy: 16,  anchor: "start" },  // Mailand: rechts unten
+    "^IBEX":      { dx: -10, dy: 8,   anchor: "end" },    // Madrid: links
+    "^N225":      { dx: 10,  dy: -6,  anchor: "start" },  // Tokio: rechts oben
+    "^KS11":      { dx: -10, dy: -10, anchor: "end" },    // Seoul: links oben
+    "000001.SS":  { dx: -10, dy: 10,  anchor: "end" },    // Shanghai: links unten
+    "^TWII":      { dx: 10,  dy: 2,   anchor: "start" },  // Taipeh: rechts
+    "^HSI":       { dx: -10, dy: 18,  anchor: "end" },    // Hongkong: links unten
+    "^STI":       { dx: 10,  dy: 4,   anchor: "start" }   // Singapur
   };
   const STDPOS = { dx: 10, dy: 0, anchor: "start" };
 
@@ -584,6 +674,8 @@
   let pinchAbstand = null;
 
   svg.addEventListener("pointerdown", e=>{
+    if(e.pointerType === "mouse" && e.button !== 0) return; // nur linke Maustaste
+    e.preventDefault();
     svg.setPointerCapture(e.pointerId);
     zeiger.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if(zeiger.size === 2){
@@ -593,6 +685,7 @@
   });
   svg.addEventListener("pointermove", e=>{
     if(!zeiger.has(e.pointerId)) return;
+    e.preventDefault();
     const alt = zeiger.get(e.pointerId);
     zeiger.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if(zeiger.size === 1){
@@ -696,12 +789,272 @@
 
   $("btnAktualisieren").addEventListener("click", ()=>{ allesLaden(); karteLaden(); });
 
+
+  /* ================== NEUE MODULE ================== */
+
+  /* ---------- Rohstoffe & Krypto ---------- */
+  async function maerkteLaden(){
+    try{
+      const r = await fetch('api/maerkte');
+      if(!r.ok) return;
+      const daten = await r.json();
+      if(!Array.isArray(daten)) return;
+      $('maerkteListe').innerHTML = daten.map(d => {
+        if(d.fehler) return '<div class="indexeintrag"><span class="iname">' + esc(d.name) + '</span><span class="ikurs">—</span></div>';
+        const cls = d.diffPzt >= 0 ? 'pos' : 'neg';
+        const p = d.diffPzt==null ? '' : (d.diffPzt>0?'+':'') + d.diffPzt.toFixed(2) + ' %';
+        const dez = d.name === 'EUR/USD' ? 4 : (d.kursEur >= 1000 ? 0 : 2);
+        const kurs = d.kursEur.toLocaleString('de-DE',{minimumFractionDigits:dez,maximumFractionDigits:dez});
+        return '<div class="indexeintrag"><span class="iname">' + esc(d.name) + '</span>' +
+               '<span class="ikurs">' + kurs + ' ' + esc(d.einheit) + '</span><span class="diff ' + cls + '">' + p + '</span></div>';
+      }).join('');
+    }catch(e){ /* still */ }
+  }
+
+  /* ---------- Verlaufschart ---------- */
+  let vlSymbol = null;
+  let vlRange = '6mo';
+  const histClientCache = new Map(); // "symbol|range" -> punkte
+
+  async function historieHolen(symbol, range){
+    const key = symbol + '|' + range;
+    if(histClientCache.has(key)) return histClientCache.get(key);
+    const r = await fetch('api/historie?symbol=' + encodeURIComponent(symbol) + '&range=' + range);
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if(!d.punkte || !d.punkte.length) throw new Error('leer');
+    histClientCache.set(key, d.punkte);
+    return d.punkte;
+  }
+
+  async function depotVerlauf(range){
+    if(!portfolio.length) throw new Error('kein Depot');
+    const reihen = await Promise.all(portfolio.map(p => historieHolen(p.sym, range)));
+    // Nach Kalendertag zusammenführen; nur Tage, an denen alle Positionen einen Kurs haben
+    const tage = new Map(); // tagKey -> { ts, summe, anzahl }
+    reihen.forEach((punkte, idx) => {
+      const stueck = portfolio[idx].stueck;
+      for(const [ts, wert] of punkte){
+        const tag = new Date(ts).toISOString().slice(0,10);
+        const e = tage.get(tag) || { ts, summe: 0, anzahl: 0 };
+        e.summe += wert * stueck; e.anzahl++;
+        tage.set(tag, e);
+      }
+    });
+    const punkte = [...tage.values()]
+      .filter(e => e.anzahl === portfolio.length)
+      .sort((a,b) => a.ts - b.ts)
+      .map(e => [e.ts, e.summe]);
+    if(!punkte.length) throw new Error('keine Überschneidung');
+    return punkte;
+  }
+
+  function liniendiagramm(punkte){
+    const B = 640, H = 220, R = { o: 14, u: 26, l: 8, r: 8 };
+    const werte = punkte.map(p => p[1]);
+    const min = Math.min(...werte), max = Math.max(...werte);
+    const spann = (max - min) || 1;
+    const x = i => R.l + i / (punkte.length - 1 || 1) * (B - R.l - R.r);
+    const y = w => R.o + (1 - (w - min) / spann) * (H - R.o - R.u);
+    const pfad = punkte.map((p,i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join('');
+    const flaeche = pfad + 'L' + x(punkte.length-1).toFixed(1) + ' ' + (H - R.u) + 'L' + R.l + ' ' + (H - R.u) + 'Z';
+    const erster = punkte[0][1], letzter = punkte[punkte.length-1][1];
+    const diff = letzter - erster, diffPzt = erster ? diff / erster * 100 : 0;
+    const farbe = diff >= 0 ? 'var(--plus)' : 'var(--minus)';
+    const datum = ts => new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    return '<svg viewBox="0 0 ' + B + ' ' + H + '" class="vlSvg" role="img" aria-label="Kursverlauf">' +
+      '<defs><linearGradient id="vlGrad" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="' + (diff>=0?'#3DD68C':'#F26D6D') + '" stop-opacity=".25"/>' +
+      '<stop offset="1" stop-color="' + (diff>=0?'#3DD68C':'#F26D6D') + '" stop-opacity="0"/></linearGradient></defs>' +
+      '<path d="' + flaeche + '" fill="url(#vlGrad)"/>' +
+      '<path d="' + pfad + '" fill="none" stroke="' + farbe + '" stroke-width="2" stroke-linejoin="round"/>' +
+      '<text class="vlLbl" x="' + R.l + '" y="' + (H-8) + '">' + datum(punkte[0][0]) + '</text>' +
+      '<text class="vlLbl" x="' + (B-R.r) + '" y="' + (H-8) + '" text-anchor="end">' + datum(punkte[punkte.length-1][0]) + '</text>' +
+      '<text class="vlLbl" x="' + (B-R.r) + '" y="' + (R.o) + '" text-anchor="end">Hoch ' + fmt(max) + ' €</text>' +
+      '<text class="vlLbl" x="' + R.l + '" y="' + (R.o) + '">Tief ' + fmt(min) + ' €</text>' +
+      '</svg>' +
+      '<div class="vlSumme"><span class="diff ' + (diff>=0?'pos':'neg') + '">' + pfx(diff) + ' € (' + pfx(diffPzt) + ' %) im Zeitraum</span>' +
+      ' · <span style="color:var(--text-dim)">aktuell ' + fmt(letzter) + ' €</span></div>';
+  }
+
+  function verlaufAuswahlFuellen(){
+    const symbole = [...new Set([...watchlist, ...portfolio.map(p=>p.sym)])];
+    const sel = $('vlSymbol');
+    const alt = vlSymbol;
+    const optionen = [];
+    if(portfolio.length) optionen.push('<option value="__DEPOT__">Gesamtes Depot</option>');
+    for(const s of symbole) optionen.push('<option value="' + esc(s) + '">' + esc(s) + '</option>');
+    sel.innerHTML = optionen.join('');
+    if(alt && [...sel.options].some(o => o.value === alt)) sel.value = alt;
+    vlSymbol = sel.value || null;
+  }
+
+  async function verlaufRendern(){
+    verlaufAuswahlFuellen();
+    const ziel = $('vlChart'), hinweis = $('vlHinweis');
+    if(!vlSymbol){ ziel.innerHTML=''; hinweis.textContent='Verlauf erscheint, sobald Watchlist oder Depot gefüllt sind.'; hinweis.hidden=false; return; }
+    hinweis.hidden = true;
+    ziel.innerHTML = '<div class="leer">Lade Verlauf …</div>';
+    try{
+      const punkte = vlSymbol === '__DEPOT__' ? await depotVerlauf(vlRange) : await historieHolen(vlSymbol, vlRange);
+      ziel.innerHTML = liniendiagramm(punkte);
+    }catch(e){
+      ziel.innerHTML = '';
+      hinweis.textContent = 'Kein Verlauf verfügbar' + (vlSymbol==='__DEPOT__' ? ' (für mindestens eine Depot-Position fehlen Daten).' : '.');
+      hinweis.hidden = false;
+    }
+  }
+
+  $('vlSymbol').addEventListener('change', ()=>{ vlSymbol = $('vlSymbol').value; verlaufRendern(); });
+  $('vlBereiche').addEventListener('click', e=>{
+    const b = e.target.closest('button[data-range]');
+    if(!b) return;
+    vlRange = b.getAttribute('data-range');
+    for(const k of $('vlBereiche').children) k.classList.toggle('aktiv', k === b);
+    verlaufRendern();
+  });
+
+  /* ---------- Heatmap (Treemap wie bei finviz) ---------- */
+  function treemap(items, B, H){
+    // items: [{wert, ...}] absteigend sortiert; liefert Rechtecke {x,y,w,h,item}
+    const gesamt = items.reduce((s,i)=>s+i.wert,0);
+    const skal = B*H/gesamt;
+    const flaechen = items.map(i => ({ item:i, a:i.wert*skal }));
+    const out = [];
+    let x=0, y=0, w=B, h=H, i=0;
+    while(i < flaechen.length){
+      const quer = w < h;               // Reihe entlang der kürzeren Seite
+      const seite = quer ? w : h;
+      let beste = null;
+      for(let j=i+1; j<=flaechen.length; j++){
+        const reihe = flaechen.slice(i,j);
+        const s = reihe.reduce((t,r)=>t+r.a,0);
+        const dicke = s/seite;
+        const schlecht = Math.max(...reihe.map(r => { const l=r.a/dicke; return Math.max(dicke/l, l/dicke); }));
+        if(!beste || schlecht <= beste.schlecht) beste = { j, reihe, dicke, schlecht };
+        else break;
+      }
+      let off = 0;
+      for(const r of beste.reihe){
+        const l = r.a/beste.dicke;
+        out.push(quer ? {x:x+off, y:y, w:l, h:beste.dicke, item:r.item}
+                      : {x:x, y:y+off, w:beste.dicke, h:l, item:r.item});
+        off += l;
+      }
+      if(quer){ y += beste.dicke; h -= beste.dicke; } else { x += beste.dicke; w -= beste.dicke; }
+      i = beste.j;
+    }
+    return out;
+  }
+
+  function heatFarbe(p){
+    if(p == null) return '#2A3140';
+    const t = Math.min(1, Math.abs(p)/3);         // ±3 % = volle Farbe
+    const misch = (a,b) => Math.round(a + (b-a)*t);
+    const basis = [42,49,64];                     // Grau bei 0 %
+    const ziel = p >= 0 ? [34,122,84] : [141,58,58];
+    return 'rgb(' + misch(basis[0],ziel[0]) + ',' + misch(basis[1],ziel[1]) + ',' + misch(basis[2],ziel[2]) + ')';
+  }
+
+  function heatmapRendern(){
+    const ziel = $('heatmap');
+    let items;
+    if(portfolio.length){
+      items = portfolio.map(p => {
+        const q = kurse[p.sym];
+        return q ? { sym:p.sym, wert:q.kursEur*p.stueck, p:q.diffPzt } : null;
+      }).filter(Boolean);
+      $('heatHinweis').textContent = 'Fläche = Positionswert · Farbe = Tagesveränderung';
+    } else {
+      items = watchlist.map(s => {
+        const q = kurse[s];
+        return q ? { sym:s, wert:1, p:q.diffPzt } : null;
+      }).filter(Boolean);
+      $('heatHinweis').textContent = 'Watchlist (gleiche Fläche) · Farbe = Tagesveränderung';
+    }
+    if(!items.length){ ziel.innerHTML = '<div class="leer">Heatmap erscheint, sobald Kursdaten vorhanden sind.</div>'; return; }
+    items.sort((a,b)=>b.wert-a.wert);
+    const rects = treemap(items, 100, 100);
+    ziel.innerHTML = rects.map(r => {
+      const gross = r.w*r.h > 6;
+      const p = r.item.p==null ? '' : (r.item.p>0?'+':'') + r.item.p.toFixed(2) + ' %';
+      return '<div class="heatKachel" style="left:' + r.x.toFixed(2) + '%;top:' + r.y.toFixed(2) +
+        '%;width:' + r.w.toFixed(2) + '%;height:' + r.h.toFixed(2) + '%;background:' + heatFarbe(r.item.p) + '" title="' +
+        esc(r.item.sym) + ' ' + p + '">' +
+        (gross ? '<span class="hSym">' + esc(r.item.sym) + '</span><span class="hPzt">' + p + '</span>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  /* ---------- Kurs-Alarme ---------- */
+  async function alarmeRendern(){
+    try{
+      const r = await fetch('api/alarme');
+      if(!r.ok) return;
+      const d = await r.json();
+      $('alHinweis').hidden = !!d.ntfy;
+      const liste = $('alListe');
+      if(!d.alarme.length){ liste.innerHTML = '<div class="leer">Keine Alarme angelegt.</div>'; return; }
+      liste.innerHTML = d.alarme.map(a =>
+        '<div class="alEintrag"><span class="sym">' + esc(a.symbol) + '</span>' +
+        '<span>' + (a.richtung==='unter' ? 'fällt unter' : 'steigt über') + ' <b>' + fmt(a.schwelle) + ' €</b></span>' +
+        '<button class="entf" data-al="' + esc(a.id) + '" aria-label="Alarm löschen">×</button></div>'
+      ).join('');
+    }catch(e){ /* still */ }
+  }
+
+  $('alHinzu').addEventListener('click', async ()=>{
+    const symbol = $('alSymbol').value.trim().toUpperCase();
+    const schwelle = parseFloat($('alSchwelle').value);
+    if(!symbol || !(schwelle > 0)) return;
+    try{
+      await fetch('api/alarme', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ symbol, richtung: $('alRichtung').value, schwelle }) });
+      $('alSymbol').value=''; $('alSchwelle').value='';
+      alarmeRendern();
+    }catch(e){ /* still */ }
+  });
+  sucheAnhaengen($('alSymbol'), $('alVorschlaege'), sym => { $('alSymbol').value = sym; $('alSchwelle').focus(); });
+
+  /* ---------- CSV-Export ---------- */
+  $('btnCsv').addEventListener('click', ()=>{
+    const kopf = 'Symbol;Stueck;Kaufkurs EUR;Kurs EUR;Wert EUR;GV EUR';
+    const zeilen = portfolio.map(p => {
+      const q = kurse[p.sym];
+      const z = n => n==null ? '' : n.toFixed(2).replace('.', ',');
+      return [p.sym, p.stueck, z(p.kauf), z(q?q.kursEur:null),
+              z(q?q.kursEur*p.stueck:null), z(q?(q.kursEur-p.kauf)*p.stueck:null)].join(';');
+    });
+    const blob = new Blob(['\ufeff' + [kopf, ...zeilen].join('\r\n')], { type:'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'depot-' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  /* ---------- PWA ---------- */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+
+  /* ---------- Löschen von Alarmen (globaler Klick-Handler-Zusatz) ---------- */
+  document.addEventListener('click', async e=>{
+    const t = e.target;
+    if(!(t instanceof Element)) return;
+    const al = t.getAttribute('data-al');
+    if(al){ await fetch('api/alarme?id=' + encodeURIComponent(al), { method:'DELETE' }).catch(()=>{}); alarmeRendern(); }
+  });
+
   /* ---------- Start ---------- */
   rendern();
-  allesLaden();
+  allesLaden().then(()=>{ heatmapRendern(); verlaufRendern(); });
   karteLaden();
-  setInterval(allesLaden, 60000);
+  maerkteLaden();
+  alarmeRendern();
+  setInterval(()=>{ allesLaden().then(heatmapRendern); }, 60000);
   setInterval(karteLaden, 120000);
+  setInterval(maerkteLaden, 120000);
 })();
 </script>
 </body>

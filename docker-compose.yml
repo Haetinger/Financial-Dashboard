@@ -1,0 +1,16 @@
+services:
+  kursstand:
+    build: .
+    container_name: kursstand
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:8080"   # nur lokal — nach außen geht's über den Cloudflare Tunnel
+    environment:
+      - KURSSTAND_NUTZER=${KURSSTAND_NUTZER:-axel}
+      - KURSSTAND_PASSWORT=${KURSSTAND_PASSWORT:?KURSSTAND_PASSWORT in .env setzen}
+      - NTFY_URL=${NTFY_URL:-}
+    volumes:
+      - kursstand-daten:/app/daten   # Alarme überleben Container-Neubauten
+
+volumes:
+  kursstand-daten:
