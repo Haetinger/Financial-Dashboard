@@ -9,9 +9,33 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const PORT = process.env.PORT || 8080;
 const CACHE_SEK = 120; // Yahoo nicht öfter als alle 2 Minuten fragen
+
+// ---------- Passwortschutz (HTTP Basic Auth) ----------
+// Wird über Umgebungsvariablen gesetzt (siehe docker-compose.yml / .env).
+// Ist KEIN Passwort gesetzt, läuft der Server offen — praktisch für lokale Tests.
+const AUTH_NUTZER   = process.env.KURSSTAND_NUTZER || "axel";
+const AUTH_PASSWORT = process.env.KURSSTAND_PASSWORT || "";
+
+function zeitkonstantGleich(a, b) {
+  const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
+function authOk(req) {
+  if (!AUTH_PASSWORT) return true; // kein Passwort konfiguriert -> offen
+  const kopf = req.headers.authorization || "";
+  if (!kopf.startsWith("Basic ")) return false;
+  let nutzer = "", passwort = "";
+  try {
+    const [n, ...p] = Buffer.from(kopf.slice(6), "base64").toString("utf8").split(":");
+    nutzer = n; passwort = p.join(":");
+  } catch (e) { return false; }
+  return zeitkonstantGleich(nutzer, AUTH_NUTZER) & zeitkonstantGleich(passwort, AUTH_PASSWORT) ? true : false;
+}
 
 // Wichtigste Indizes weltweit (Yahoo-Symbole)
 const INDIZES = [
@@ -155,6 +179,15 @@ async function symbolSuche(q) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (!authOk(req)) {
+    res.writeHead(401, {
+      "WWW-Authenticate": 'Basic realm="Kursstand", charset="UTF-8"',
+      "Content-Type": "text/plain; charset=utf-8"
+    });
+    res.end("Anmeldung erforderlich");
+    return;
+  }
+
   const u = new URL(req.url, "http://localhost");
 
   if (u.pathname === "/api/suche") {
@@ -229,5 +262,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log("Kursstand-Backend läuft auf Port " + PORT);
+  console.log("Kursstand-Backend läuft auf Port " + PORT +
+    (AUTH_PASSWORT ? " · Passwortschutz aktiv (Nutzer: " + AUTH_NUTZER + ")" : " · OHNE Passwortschutz (KURSSTAND_PASSWORT nicht gesetzt)"));
 });
